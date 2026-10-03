@@ -24,6 +24,7 @@ Yeni bir marka eklemek için `cihaz.cs` içindeki `Dialect` sınıfına bir komu
 - Limit kontrolü: değer alt/üst limitin dışına çıkınca uyarır, olayı saatiyle ve süresiyle kaydeder
 - CSV kaydı (`kayitlar` klasörüne; bilgisayarın bölge ayarıyla yazılır, Excel'de doğrudan açılır)
 - Osiloskop ekran görüntüsü alma (yalnızca Siglent)
+- Türkçe / İngilizce arayüz ve açık / koyu tema (üst çubuktaki listelerden)
 
 ## Gereksinimler
 

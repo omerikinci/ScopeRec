@@ -12,30 +12,96 @@ using System.Threading;
 using System.Windows.Forms;
 using System.Windows.Forms.DataVisualization.Charting;
 
+// Dil ve tema: arayuz bunlar degisince bastan kurulur, o yuzden metinler ve renkler kurulum aninda okunur
+static class Ui
+{
+    public static volatile bool En;
+    public static string S(string tr, string en) { return En ? en : tr; }
+
+    public static Theme Th = Theme.Light();
+}
+
+class Theme
+{
+    public bool Dark;
+    public Color Back, Bar, Input, Text, Muted, Grid, Plot, Card, CardAlarm, Good, Bad, Border;
+    public Color[] Chan;
+
+    public static Theme Light()
+    {
+        Theme t = new Theme();
+        t.Back = SystemColors.Control; t.Bar = Color.FromArgb(245, 246, 248); t.Input = SystemColors.Window;
+        t.Text = SystemColors.ControlText; t.Muted = Color.DimGray; t.Grid = Color.Gainsboro; t.Plot = Color.White;
+        t.Card = Color.White; t.CardAlarm = Color.FromArgb(255, 205, 210);
+        t.Good = Color.FromArgb(46, 125, 50); t.Bad = Color.FromArgb(198, 40, 40); t.Border = Color.Silver;
+        t.Chan = new Color[] { Color.FromArgb(200, 150, 0), Color.FromArgb(194, 24, 91), Color.FromArgb(0, 151, 167), Color.FromArgb(46, 125, 50) };
+        return t;
+    }
+
+    public static Theme MakeDark()
+    {
+        Theme t = new Theme();
+        t.Dark = true;
+        t.Back = Color.FromArgb(30, 31, 34); t.Bar = Color.FromArgb(43, 45, 48); t.Input = Color.FromArgb(49, 51, 56);
+        t.Text = Color.FromArgb(223, 225, 229); t.Muted = Color.FromArgb(150, 154, 160); t.Grid = Color.FromArgb(60, 63, 68); t.Plot = Color.FromArgb(24, 25, 28);
+        t.Card = Color.FromArgb(43, 45, 48); t.CardAlarm = Color.FromArgb(110, 30, 34);
+        t.Good = Color.FromArgb(102, 187, 106); t.Bad = Color.FromArgb(239, 83, 80); t.Border = Color.FromArgb(80, 84, 90);
+        t.Chan = new Color[] { Color.FromArgb(255, 213, 0), Color.FromArgb(255, 105, 170), Color.FromArgb(64, 200, 220), Color.FromArgb(110, 210, 110) };
+        return t;
+    }
+}
+
+// Durum cubugunu tema rengiyle duz boyar
+class FlatStripRenderer : ToolStripSystemRenderer
+{
+    protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+    {
+        using (SolidBrush b = new SolidBrush(e.ToolStrip.BackColor)) e.Graphics.FillRectangle(b, e.AffectedBounds);
+    }
+    protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e) { }
+}
+
+// Kenarligi ve basligi tema rengiyle cizen grup kutusu
+class ThemedGroup : GroupBox
+{
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        Theme t = Ui.Th;
+        e.Graphics.Clear(BackColor);
+        Size ts = TextRenderer.MeasureText(Text, Font);
+        using (Pen p = new Pen(t.Border)) e.Graphics.DrawRectangle(p, 0, ts.Height / 2, Width - 1, Height - ts.Height / 2 - 1);
+        Rectangle r = new Rectangle(8, 0, ts.Width, ts.Height);
+        using (SolidBrush b = new SolidBrush(BackColor)) e.Graphics.FillRectangle(b, r);
+        TextRenderer.DrawText(e.Graphics, Text, Font, r, t.Text);
+    }
+}
+
 class ParamInfo
 {
-    public string Code, Name, Unit;
-    public ParamInfo(string code, string name, string unit) { Code = code; Name = name; Unit = unit; }
+    public string Code, Unit;
+    readonly string nameTr, nameEn;
+    public string Name { get { return Ui.S(nameTr, nameEn); } }
+    public ParamInfo(string code, string tr, string en, string unit) { Code = code; nameTr = tr; nameEn = en; Unit = unit; }
     public override string ToString() { return Code + "  –  " + Name; }
 
     public static readonly ParamInfo[] All = {
-        new ParamInfo("RMS", "etkin değer", "V"),
-        new ParamInfo("MEAN", "ortalama (DC)", "V"),
-        new ParamInfo("PKPK", "tepe-tepe (Vpp)", "V"),
-        new ParamInfo("MAX", "en yüksek", "V"),
-        new ParamInfo("MIN", "en düşük", "V"),
-        new ParamInfo("AMPL", "genlik", "V"),
-        new ParamInfo("TOP", "üst seviye", "V"),
-        new ParamInfo("BASE", "alt seviye", "V"),
-        new ParamInfo("CRMS", "çevrim RMS", "V"),
-        new ParamInfo("CMEAN", "çevrim ortalaması", "V"),
-        new ParamInfo("FREQ", "frekans", "Hz"),
-        new ParamInfo("PER", "periyot", "s"),
-        new ParamInfo("DUTY", "doluluk oranı", "%"),
-        new ParamInfo("PWID", "pozitif darbe genişliği", "s"),
-        new ParamInfo("NWID", "negatif darbe genişliği", "s"),
-        new ParamInfo("RISE", "yükselme süresi", "s"),
-        new ParamInfo("FALL", "düşme süresi", "s"),
+        new ParamInfo("RMS", "etkin değer", "RMS value", "V"),
+        new ParamInfo("MEAN", "ortalama (DC)", "mean (DC)", "V"),
+        new ParamInfo("PKPK", "tepe-tepe (Vpp)", "peak-to-peak (Vpp)", "V"),
+        new ParamInfo("MAX", "en yüksek", "maximum", "V"),
+        new ParamInfo("MIN", "en düşük", "minimum", "V"),
+        new ParamInfo("AMPL", "genlik", "amplitude", "V"),
+        new ParamInfo("TOP", "üst seviye", "top level", "V"),
+        new ParamInfo("BASE", "alt seviye", "base level", "V"),
+        new ParamInfo("CRMS", "çevrim RMS", "cycle RMS", "V"),
+        new ParamInfo("CMEAN", "çevrim ortalaması", "cycle mean", "V"),
+        new ParamInfo("FREQ", "frekans", "frequency", "Hz"),
+        new ParamInfo("PER", "periyot", "period", "s"),
+        new ParamInfo("DUTY", "doluluk oranı", "duty cycle", "%"),
+        new ParamInfo("PWID", "pozitif darbe genişliği", "positive pulse width", "s"),
+        new ParamInfo("NWID", "negatif darbe genişliği", "negative pulse width", "s"),
+        new ParamInfo("RISE", "yükselme süresi", "rise time", "s"),
+        new ParamInfo("FALL", "düşme süresi", "fall time", "s"),
     };
 
     public static ParamInfo Find(string code)
@@ -90,7 +156,6 @@ class MainForm : Form
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     static readonly string Sep = Cur.TextInfo.ListSeparator;
     static readonly string[] Chans = { "C1", "C2", "C3", "C4" };
-    static readonly Color[] ChanColors = { Color.FromArgb(200, 150, 0), Color.FromArgb(194, 24, 91), Color.FromArgb(0, 151, 167), Color.FromArgb(46, 125, 50) };
     // Sorgular arka arkaya gelirse SDS1104X-E yeni yakalama yapamiyor (ekran donuyor, deger yenilenmiyor); olculen esik ~30 ms
     const int MinInterval = 40;
 
@@ -104,7 +169,10 @@ class MainForm : Form
     CheckBox[] chkChan = new CheckBox[4];
     CheckedListBox lstParams;
     NumericUpDown numInterval;
-    ComboBox cmbAlarmCh, cmbAlarmParam, cmbChart, cmbWindow, cmbConn, cmbDialect;
+    ComboBox cmbAlarmCh, cmbAlarmParam, cmbChart, cmbWindow, cmbConn, cmbDialect, cmbLang, cmbTheme;
+    Panel topBar;
+    StatusStrip status;
+    bool uiRunning;
     TextBox txtLow, txtHigh, txtAddr;
     Label lblLow, lblHigh, lblDevice;
     FlowLayoutPanel cards;
@@ -135,6 +203,7 @@ class MainForm : Form
         ClientSize = new Size(1180, 760);
         MinimumSize = new Size(900, 600);
         StartPosition = FormStartPosition.CenterScreen;
+        LoadPrefs();
         BuildUi();
         LoadSettings();
         UpdateLimitLabels();
@@ -165,14 +234,14 @@ class MainForm : Form
 
         FlowLayoutPanel bar = new FlowLayoutPanel();
         bar.Dock = DockStyle.Fill;
-        bar.Controls.Add(MakeLabel("Grafik:", 6));
+        bar.Controls.Add(MakeLabel(Ui.S("Grafik:", "Chart:"), 6));
         cmbChart = MakeCombo(190);
         foreach (ParamInfo p in ParamInfo.All) cmbChart.Items.Add(p);
         cmbChart.SelectedIndex = 0;
         bar.Controls.Add(cmbChart);
-        bar.Controls.Add(MakeLabel("Zaman aralığı:", 6));
+        bar.Controls.Add(MakeLabel(Ui.S("Zaman aralığı:", "Time span:"), 6));
         cmbWindow = MakeCombo(100);
-        cmbWindow.Items.AddRange(new object[] { "30 sn", "2 dk", "10 dk", "1 saat" });
+        cmbWindow.Items.AddRange(new object[] { Ui.S("30 sn", "30 s"), Ui.S("2 dk", "2 min"), Ui.S("10 dk", "10 min"), Ui.S("1 saat", "1 hour") });
         cmbWindow.SelectedIndex = 1;
         bar.Controls.Add(cmbWindow);
         main.Controls.Add(bar, 0, 1);
@@ -180,10 +249,10 @@ class MainForm : Form
         chart = new Chart();
         chart.Dock = DockStyle.Fill;
         ChartArea area = new ChartArea("a");
-        area.AxisX.Title = "Süre [s]";
+        area.AxisX.Title = Ui.S("Süre [s]", "Time [s]");
         area.AxisX.LabelStyle.Format = "0";
-        area.AxisX.MajorGrid.LineColor = Color.Gainsboro;
-        area.AxisY.MajorGrid.LineColor = Color.Gainsboro;
+        area.AxisX.MajorGrid.LineColor = Ui.Th.Grid;
+        area.AxisY.MajorGrid.LineColor = Ui.Th.Grid;
         area.AxisY.IsStartedFromZero = false;
         area.AxisY.LabelStyle.Format = "0.###";
         chart.ChartAreas.Add(area);
@@ -202,32 +271,32 @@ class MainForm : Form
         left.Padding = new Padding(6);
         int y = 6;
 
-        GroupBox gConn = MakeGroup("Bağlantı", left, ref y, 112);
-        cmbConn = MakeCombo(70); cmbConn.Items.AddRange(new object[] { "USB", "Ağ" }); cmbConn.SelectedIndex = 0;
+        GroupBox gConn = MakeGroup(Ui.S("Bağlantı", "Connection"), left, ref y, 112);
+        cmbConn = MakeCombo(70); cmbConn.Items.AddRange(new object[] { "USB", Ui.S("Ağ", "LAN") }); cmbConn.SelectedIndex = 0;
         cmbConn.SetBounds(12, 22, 70, 24);
         txtAddr = new TextBox(); txtAddr.SetBounds(88, 22, 138, 24);
         cmbConn.SelectedIndexChanged += delegate { txtAddr.Enabled = cmbConn.SelectedIndex == 1; };
         txtAddr.Enabled = false;
-        Label lAddr = MakeLabel("Ağ için IP adresi (örn. 192.168.1.50:5025)", 0);
-        lAddr.Font = new Font("Segoe UI", 7.5f); lAddr.ForeColor = Color.DimGray;
+        Label lAddr = MakeLabel(Ui.S("Ağ için IP adresi (örn. 192.168.1.50:5025)", "IP address for LAN (e.g. 192.168.1.50:5025)"), 0);
+        lAddr.Font = new Font("Segoe UI", 7.5f); lAddr.ForeColor = Ui.Th.Muted;
         lAddr.SetBounds(12, 50, 216, 16);
-        Label lDia = MakeLabel("Komut seti:", 0); lDia.SetBounds(12, 78, 70, 20);
-        cmbDialect = MakeCombo(140); cmbDialect.Items.AddRange(Dialect.Names); cmbDialect.SelectedIndex = 0;
-        cmbDialect.SetBounds(86, 74, 140, 24);
+        Label lDia = MakeLabel(Ui.S("Komut seti:", "Command set:"), 0); lDia.SetBounds(12, 78, 90, 20);
+        cmbDialect = MakeCombo(140); cmbDialect.Items.AddRange(Dialect.Names); cmbDialect.Items[0] = Ui.S("Otomatik", "Automatic"); cmbDialect.SelectedIndex = 0;
+        cmbDialect.SetBounds(104, 74, 122, 24);
         gConn.Controls.AddRange(new Control[] { cmbConn, txtAddr, lAddr, lDia, cmbDialect });
 
-        GroupBox gCh = MakeGroup("Kanallar", left, ref y, 52);
+        GroupBox gCh = MakeGroup(Ui.S("Kanallar", "Channels"), left, ref y, 52);
         for (int i = 0; i < 4; i++)
         {
             chkChan[i] = new CheckBox();
-            chkChan[i].Text = Chans[i]; chkChan[i].ForeColor = ChanColors[i];
+            chkChan[i].Text = Chans[i]; chkChan[i].ForeColor = Ui.Th.Chan[i];
             chkChan[i].Font = new Font(Font, FontStyle.Bold);
             chkChan[i].SetBounds(12 + i * 56, 22, 52, 22);
             gCh.Controls.Add(chkChan[i]);
         }
         chkChan[0].Checked = true;
 
-        GroupBox gPar = MakeGroup("Ölçülecek parametreler", left, ref y, 190);
+        GroupBox gPar = MakeGroup(Ui.S("Ölçülecek parametreler", "Parameters to measure"), left, ref y, 190);
         lstParams = new CheckedListBox();
         lstParams.CheckOnClick = true; lstParams.IntegralHeight = false;
         lstParams.SetBounds(8, 22, 218, 160);
@@ -235,17 +304,17 @@ class MainForm : Form
         lstParams.SetItemChecked(0, true);
         gPar.Controls.Add(lstParams);
 
-        GroupBox gInt = MakeGroup("Okuma aralığı", left, ref y, 56);
+        GroupBox gInt = MakeGroup(Ui.S("Okuma aralığı", "Read interval"), left, ref y, 56);
         numInterval = new NumericUpDown();
         numInterval.Minimum = MinInterval; numInterval.Maximum = 60000; numInterval.Increment = 10; numInterval.Value = MinInterval;
         numInterval.SetBounds(12, 22, 80, 24);
         gInt.Controls.Add(numInterval);
-        Label ms = MakeLabel("ms bekleme (en az " + MinInterval + ")", 0);
+        Label ms = MakeLabel(Ui.S("ms bekleme (en az ", "ms wait (min ") + MinInterval + ")", 0);
         ms.SetBounds(98, 25, 130, 20);
         gInt.Controls.Add(ms);
 
-        GroupBox gAl = MakeGroup("Limit kontrolü (süreklilik)", left, ref y, 176);
-        chkAlarm = new CheckBox(); chkAlarm.Text = "Limit dışına çıkınca uyar";
+        GroupBox gAl = MakeGroup(Ui.S("Limit kontrolü (süreklilik)", "Limit check (continuity)"), left, ref y, 176);
+        chkAlarm = new CheckBox(); chkAlarm.Text = Ui.S("Limit dışına çıkınca uyar", "Warn when out of limits");
         chkAlarm.SetBounds(12, 22, 210, 22);
         cmbAlarmCh = MakeCombo(56); cmbAlarmCh.Items.AddRange(Chans); cmbAlarmCh.SelectedIndex = 0;
         cmbAlarmCh.SetBounds(12, 48, 56, 24);
@@ -258,36 +327,47 @@ class MainForm : Form
         txtLow = new TextBox(); txtLow.SetBounds(116, 79, 110, 24);
         lblHigh = MakeLabel("", 0); lblHigh.SetBounds(12, 112, 100, 20);
         txtHigh = new TextBox(); txtHigh.SetBounds(116, 109, 110, 24);
-        chkBeep = new CheckBox(); chkBeep.Text = "Sesli uyarı"; chkBeep.Checked = true;
+        chkBeep = new CheckBox(); chkBeep.Text = Ui.S("Sesli uyarı", "Sound alert"); chkBeep.Checked = true;
         chkBeep.SetBounds(12, 142, 210, 22);
         gAl.Controls.AddRange(new Control[] { chkAlarm, cmbAlarmCh, cmbAlarmParam, lblLow, txtLow, lblHigh, txtHigh, chkBeep });
 
-        lockWhileRunning = new Control[] { gConn, gCh, gPar, gInt, gAl };
+
 
         // ust cubuk
         Panel top = new Panel();
-        top.Dock = DockStyle.Top; top.Height = 58; top.BackColor = Color.FromArgb(245, 246, 248);
+        top.Dock = DockStyle.Top; top.Height = 58; top.BackColor = Ui.Th.Bar;
         btnStart = new Button();
         btnStart.SetBounds(10, 9, 150, 40);
         btnStart.Font = new Font("Segoe UI", 11f, FontStyle.Bold);
         btnStart.FlatStyle = FlatStyle.Flat; btnStart.ForeColor = Color.White;
         btnStart.Click += delegate { if (running) StopMeasure(); else StartMeasure(); };
-        chkRecord = new CheckBox(); chkRecord.Text = "CSV dosyasına kaydet"; chkRecord.Checked = true;
+        chkRecord = new CheckBox(); chkRecord.Text = Ui.S("CSV dosyasına kaydet", "Record to CSV file"); chkRecord.Checked = true;
         chkRecord.SetBounds(176, 19, 160, 22);
         chkRecord.CheckedChanged += delegate { wantRecord = chkRecord.Checked; };
-        btnFolder = MakeButton("Kayıt klasörü", 340, delegate { Directory.CreateDirectory(RecDir); Process.Start(RecDir); });
-        btnShot = MakeButton("Ekran görüntüsü al", 456, delegate { TakeShot(); });
+        btnFolder = MakeButton(Ui.S("Kayıt klasörü", "Records folder"), 340, delegate { Directory.CreateDirectory(RecDir); Process.Start(RecDir); });
+        btnShot = MakeButton(Ui.S("Ekran görüntüsü al", "Take screenshot"), 456, delegate { TakeShot(); });
         btnShot.Width = 130;
-        btnReset = MakeButton("İstatistiği sıfırla", 592, delegate { lock (lk) { foreach (SeriesData s in series) s.ResetStats(); violations = 0; } });
+        btnReset = MakeButton(Ui.S("İstatistiği sıfırla", "Reset statistics"), 592, delegate { lock (lk) { foreach (SeriesData s in series) s.ResetStats(); violations = 0; } });
         btnReset.Width = 120;
         lblDevice = new Label();
-        lblDevice.Dock = DockStyle.Right; lblDevice.Width = 380;
+        lblDevice.Dock = DockStyle.Right; lblDevice.Width = 270;
         lblDevice.Padding = new Padding(0, 0, 10, 0);
         lblDevice.TextAlign = ContentAlignment.MiddleRight;
-        top.Controls.AddRange(new Control[] { btnStart, chkRecord, btnFolder, btnShot, btnReset, lblDevice });
+        // dil ve tema: degisince arayuz bastan kurulur (olcum surerken kilitli)
+        cmbLang = MakeCombo(78); cmbLang.Items.AddRange(new object[] { "Türkçe", "English" });
+        cmbLang.SelectedIndex = Ui.En ? 1 : 0;
+        cmbLang.SetBounds(724, 17, 78, 24);
+        cmbLang.SelectedIndexChanged += delegate { Ui.En = cmbLang.SelectedIndex == 1; BeginInvoke(new MethodInvoker(Rebuild)); };
+        cmbTheme = MakeCombo(74); cmbTheme.Items.AddRange(new object[] { Ui.S("Açık", "Light"), Ui.S("Koyu", "Dark") });
+        cmbTheme.SelectedIndex = Ui.Th.Dark ? 1 : 0;
+        cmbTheme.SetBounds(808, 17, 74, 24);
+        cmbTheme.SelectedIndexChanged += delegate { Ui.Th = cmbTheme.SelectedIndex == 1 ? Theme.MakeDark() : Theme.Light(); BeginInvoke(new MethodInvoker(Rebuild)); };
+        top.Controls.AddRange(new Control[] { btnStart, chkRecord, btnFolder, btnShot, btnReset, cmbLang, cmbTheme, lblDevice });
+        topBar = top;
 
         StatusStrip st = new StatusStrip();
-        stState = new ToolStripStatusLabel("Hazır");
+        status = st;
+        stState = new ToolStripStatusLabel(Ui.S("Hazır", "Ready"));
         stCount = new ToolStripStatusLabel(""); stRate = new ToolStripStatusLabel("");
         stTime = new ToolStripStatusLabel(""); stAlarm = new ToolStripStatusLabel("");
         stFile = new ToolStripStatusLabel(""); stFile.Spring = true; stFile.TextAlign = ContentAlignment.MiddleRight;
@@ -302,6 +382,133 @@ class MainForm : Form
         Controls.Add(st);
         wantRecord = true;
         SetStartButton();
+        // Etiketler acik kalir (koyu temada devre disi yazi okunmuyor); yalnizca girdi denetimleri kilitlenir
+        List<Control> locks = new List<Control>();
+        foreach (GroupBox g in new GroupBox[] { gConn, gCh, gPar, gInt, gAl })
+            foreach (Control c in g.Controls) if (!(c is Label)) locks.Add(c);
+        locks.Add(cmbLang); locks.Add(cmbTheme);
+        lockWhileRunning = locks.ToArray();
+        ApplyTheme();
+    }
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+    [System.Runtime.InteropServices.DllImport("uxtheme.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern int SetWindowTheme(IntPtr hwnd, string app, string idList);
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        DarkTitleBar();
+    }
+
+    void DarkTitleBar()
+    {
+        // Windows 10 2004+ / 11: baslik cubugunu temaya uydurur; eski surumlerde sessizce etkisiz kalir
+        int on = Ui.Th.Dark ? 1 : 0;
+        try { DwmSetWindowAttribute(Handle, 20, ref on, 4); } catch (Exception) { }
+    }
+
+    void ApplyTheme()
+    {
+        Theme t = Ui.Th;
+        BackColor = t.Back; ForeColor = t.Text; // panel, etiket, onay kutusu gibi denetimler bunlari devralir
+        topBar.BackColor = t.Bar;
+        PaintInputs(this);
+        btnStart.ForeColor = Color.White; btnStart.FlatAppearance.BorderSize = 0;
+        for (int i = 0; i < 4; i++) chkChan[i].ForeColor = t.Chan[i];
+
+        status.BackColor = t.Bar; status.SizingGrip = false;
+        status.Renderer = new FlatStripRenderer();
+        foreach (ToolStripItem it in status.Items) it.ForeColor = t.Text;
+
+        chart.BackColor = t.Back;
+        ChartArea a = chart.ChartAreas[0];
+        a.BackColor = t.Plot;
+        foreach (Axis ax in new Axis[] { a.AxisX, a.AxisY })
+        {
+            ax.LineColor = t.Border; ax.MajorTickMark.LineColor = t.Border; ax.MajorGrid.LineColor = t.Grid;
+            ax.LabelStyle.ForeColor = t.Text; ax.TitleForeColor = t.Text;
+        }
+        chart.Legends[0].BackColor = Color.Transparent; chart.Legends[0].ForeColor = t.Text;
+        if (IsHandleCreated) DarkTitleBar();
+    }
+
+    void DrawComboItem(object sender, DrawItemEventArgs e)
+    {
+        ComboBox c = (ComboBox)sender;
+        Theme t = Ui.Th;
+        bool hot = (e.State & DrawItemState.Selected) != 0 && (e.State & DrawItemState.ComboBoxEdit) == 0;
+        using (SolidBrush b = new SolidBrush(hot ? t.Border : t.Input)) e.Graphics.FillRectangle(b, e.Bounds);
+        if (e.Index >= 0)
+            TextRenderer.DrawText(e.Graphics, c.GetItemText(c.Items[e.Index]), c.Font, e.Bounds, c.Enabled ? t.Text : t.Muted,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+    }
+
+    void PaintInputs(Control parent)
+    {
+        Theme t = Ui.Th;
+        foreach (Control c in parent.Controls)
+        {
+            if (c is TextBox || c is ListBox || c is NumericUpDown || c is ComboBox)
+            {
+                c.BackColor = t.Input; c.ForeColor = t.Text;
+                if (t.Dark)
+                {
+                    if (c is ComboBox)
+                    {
+                        // gorsel stil arka plan rengini yok saydigi icin duz stil + kendi cizimimiz
+                        ComboBox cb = (ComboBox)c;
+                        cb.FlatStyle = FlatStyle.Flat; cb.DrawMode = DrawMode.OwnerDrawFixed;
+                        cb.DrawItem += DrawComboItem;
+                    }
+                    if (c is TextBox) ((TextBox)c).BorderStyle = BorderStyle.FixedSingle;
+                    if (c is ListBox) { ((ListBox)c).BorderStyle = BorderStyle.FixedSingle; try { SetWindowTheme(c.Handle, "DarkMode_Explorer", null); } catch (Exception) { } }
+                }
+            }
+            else if (c is Button && c != btnStart && t.Dark)
+            {
+                Button b = (Button)c;
+                b.FlatStyle = FlatStyle.Flat; b.BackColor = t.Input; b.ForeColor = t.Text;
+                b.FlatAppearance.BorderColor = t.Border;
+            }
+
+            PaintInputs(c);
+        }
+    }
+
+    // Dil ya da tema degisince arayuzu bastan kurar; olcum verisi ve olay listesi korunur
+    void Rebuild()
+    {
+        if (running) return;
+        SaveSettings();
+        object[] log = new object[lstLog.Items.Count];
+        lstLog.Items.CopyTo(log, 0);
+        SuspendLayout();
+        List<Control> old = new List<Control>();
+        foreach (Control c in Controls) old.Add(c);
+        Controls.Clear();
+        foreach (Control c in old) c.Dispose();
+        cardPanel = null; cardValue = null; cardStat = null;
+        BuildUi();
+        LoadSettings();
+        UpdateLimitLabels();
+        lstLog.Items.AddRange(log);
+        if (series.Count > 0) BuildCards();
+        ResumeLayout();
+    }
+
+    // Dil ve tema arayuz kurulmadan once okunur; kayit yoksa dil Windows diline gore secilir
+    void LoadPrefs()
+    {
+        Ui.En = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName != "tr";
+        if (!File.Exists(IniPath)) return;
+        foreach (string line in File.ReadAllLines(IniPath))
+        {
+            if (line == "dil=en") Ui.En = true;
+            else if (line == "dil=tr") Ui.En = false;
+            else if (line == "tema=koyu") Ui.Th = Theme.MakeDark();
+        }
     }
 
     Label MakeLabel(string text, int topMargin)
@@ -328,7 +535,7 @@ class MainForm : Form
 
     GroupBox MakeGroup(string text, Panel parent, ref int y, int height)
     {
-        GroupBox g = new GroupBox();
+        GroupBox g = new ThemedGroup();
         g.Text = text; g.SetBounds(6, y, 234, height);
         parent.Controls.Add(g);
         y += height + 8;
@@ -337,15 +544,15 @@ class MainForm : Form
 
     void SetStartButton()
     {
-        btnStart.Text = running ? "■  Durdur" : "▶  Başlat";
+        btnStart.Text = running ? Ui.S("■  Durdur", "■  Stop") : Ui.S("▶  Başlat", "▶  Start");
         btnStart.BackColor = running ? Color.FromArgb(198, 40, 40) : Color.FromArgb(46, 125, 50);
     }
 
     void UpdateLimitLabels()
     {
         string unit = ((ParamInfo)cmbAlarmParam.SelectedItem).Unit;
-        lblLow.Text = "Alt limit [" + unit + "]:";
-        lblHigh.Text = "Üst limit [" + unit + "]:";
+        lblLow.Text = Ui.S("Alt limit [", "Lower limit [") + unit + "]:";
+        lblHigh.Text = Ui.S("Üst limit [", "Upper limit [") + unit + "]:";
     }
 
     // ---------------------------------------------------------------- bicimlendirme
@@ -402,14 +609,14 @@ class MainForm : Form
         Config c = ReadConn();
         if (c.Lan && c.Addr.Length == 0)
         {
-            MessageBox.Show(this, "Ağ bağlantısı için osiloskobun IP adresini girin.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, Ui.S("Ağ bağlantısı için osiloskobun IP adresini girin.", "Enter the oscilloscope's IP address for the LAN connection."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         for (int i = 0; i < 4; i++) if (chkChan[i].Checked) c.Chans.Add(Chans[i]);
         foreach (object o in lstParams.CheckedItems) c.Params.Add((ParamInfo)o);
         if (c.Chans.Count == 0 || c.Params.Count == 0)
         {
-            MessageBox.Show(this, "En az bir kanal ve bir parametre seçin.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, Ui.S("En az bir kanal ve bir parametre seçin.", "Select at least one channel and one parameter."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         c.Interval = (int)numInterval.Value;
@@ -423,7 +630,7 @@ class MainForm : Form
             c.AlarmIdx = list.FindIndex(delegate(SeriesData s) { return s.Key == key; });
             if (c.AlarmIdx < 0 || (double.IsNaN(c.Low) && double.IsNaN(c.High)))
             {
-                MessageBox.Show(this, "Limit kontrolü için seçilen kanal ve parametre ölçülenler arasında olmalı ve en az bir limit girilmeli.",
+                MessageBox.Show(this, Ui.S("Limit kontrolü için seçilen kanal ve parametre ölçülenler arasında olmalı ve en az bir limit girilmeli.", "The channel and parameter chosen for the limit check must be among the measured ones, and at least one limit must be entered."),
                     Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
@@ -435,7 +642,7 @@ class MainForm : Form
         if (!c.Params.Contains((ParamInfo)cmbChart.SelectedItem)) cmbChart.SelectedItem = c.Params[0];
         BuildCards();
         startedAt = DateTime.Now;
-        running = true;
+        running = true; uiRunning = true;
         wantRecord = chkRecord.Checked;
         foreach (Control ctl in lockWhileRunning) ctl.Enabled = false;
         SetStartButton();
@@ -447,11 +654,12 @@ class MainForm : Form
 
     void StopMeasure()
     {
-        if (!running) return;
+        if (!running && !uiRunning) return;
         running = false;
         if (worker != null) worker.Join(6000);
-        worker = null;
+        worker = null; uiRunning = false;
         foreach (Control ctl in lockWhileRunning) ctl.Enabled = true;
+        txtAddr.Enabled = cmbConn.SelectedIndex == 1;
         SetStartButton();
     }
 
@@ -465,17 +673,17 @@ class MainForm : Form
         {
             SeriesData s = series[i];
             Panel p = new Panel();
-            p.Size = new Size(206, 108); p.Margin = new Padding(4); p.BackColor = Color.White; p.BorderStyle = BorderStyle.FixedSingle;
+            p.Size = new Size(206, 108); p.Margin = new Padding(4); p.BackColor = Ui.Th.Card; p.BorderStyle = BorderStyle.FixedSingle;
             Label title = new Label();
             title.Text = s.Ch + "  " + s.P.Code + "  (" + s.P.Name + ")";
-            title.ForeColor = ChanColors[Array.IndexOf(Chans, s.Ch)];
+            title.ForeColor = Ui.Th.Chan[Array.IndexOf(Chans, s.Ch)];
             title.Font = new Font(Font, FontStyle.Bold);
             title.SetBounds(8, 6, 192, 18); title.AutoEllipsis = true;
             Label val = new Label();
             val.Font = new Font("Segoe UI", 19f, FontStyle.Bold);
-            val.SetBounds(6, 24, 194, 40); val.Text = "—";
+            val.SetBounds(6, 24, 194, 40); val.Text = "—"; val.ForeColor = Ui.Th.Text;
             Label stat = new Label();
-            stat.Font = new Font("Segoe UI", 8f); stat.ForeColor = Color.DimGray;
+            stat.Font = new Font("Segoe UI", 8f); stat.ForeColor = Ui.Th.Muted;
             stat.SetBounds(8, 66, 192, 36);
             foreach (Label l in new Label[] { title, val, stat }) l.BackColor = Color.Transparent;
             p.Controls.AddRange(new Control[] { title, val, stat });
@@ -512,11 +720,11 @@ class MainForm : Form
     // basePath uzantisizdir; uzanti markaya gore eklenir
     void Shot(ILink u, Dialect d, string basePath)
     {
-        if (d.ScreenshotCmd == null) { Log("Ekran görüntüsü bu komut setinde (" + d.Name + ") desteklenmiyor"); return; }
+        if (d.ScreenshotCmd == null) { Log(Ui.S("Ekran görüntüsü bu komut setinde (", "Screenshot is not supported by this command set (") + d.Name + Ui.S(") desteklenmiyor", ")")); return; }
         u.SetTimeout(15000);
         try { File.WriteAllBytes(basePath + d.ScreenshotExt, u.Query(d.ScreenshotCmd)); }
         finally { u.SetTimeout(3000); }
-        Log("Ekran görüntüsü kaydedildi: " + Path.GetFileName(basePath + d.ScreenshotExt));
+        Log(Ui.S("Ekran görüntüsü kaydedildi: ", "Screenshot saved: ") + Path.GetFileName(basePath + d.ScreenshotExt));
     }
 
     void Work()
@@ -531,7 +739,7 @@ class MainForm : Form
         int errs = 0;
         double outSince = 0;
         double[] vals = new double[series.Count];
-        Log("Ölçüm başladı");
+        Log(Ui.S("Ölçüm başladı", "Measurement started"));
         try
         {
             while (running)
@@ -543,7 +751,7 @@ class MainForm : Form
                         u = OpenLink(c);
                         if (u == null)
                         {
-                            connected = false; deviceText = "Osiloskop bulunamadı – bekleniyor…";
+                            connected = false; deviceText = Ui.S("Osiloskop bulunamadı – bekleniyor…", "Oscilloscope not found – waiting…");
                             Thread.Sleep(1000);
                             continue;
                         }
@@ -552,7 +760,7 @@ class MainForm : Form
                         dl = Dialect.Pick(c.DialectIdx, idn);
                         deviceText = ShortIdn(idn);
                         connected = true;
-                        Log("Bağlandı: " + deviceText + "  –  komut seti: " + dl.Name);
+                        Log(Ui.S("Bağlandı: ", "Connected: ") + deviceText + Ui.S("  –  komut seti: ", "  –  command set: ") + dl.Name);
                     }
                     string shot = shotRequest;
                     if (shot != null) { shotRequest = null; Shot(u, dl, shot); }
@@ -575,24 +783,24 @@ class MainForm : Form
                         string name = Path.Combine(RecDir, "olcum_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
                         csv = new StreamWriter(name + ".csv", false, new UTF8Encoding(true));
                         csv.AutoFlush = true;
-                        StringBuilder h = new StringBuilder("zaman" + Sep + "t[s]");
+                        StringBuilder h = new StringBuilder(Ui.S("zaman", "time") + Sep + "t[s]");
                         foreach (SeriesData s in series) h.Append(Sep + s.Key + "[" + s.P.Unit + "]");
                         csv.WriteLine(h);
                         if (c.AlarmIdx >= 0)
                         {
                             evCsv = new StreamWriter(name + "_olaylar.csv", false, new UTF8Encoding(true));
                             evCsv.AutoFlush = true;
-                            evCsv.WriteLine("zaman" + Sep + "t[s]" + Sep + "olay" + Sep + "deger" + Sep + "limit disi sure[s]");
+                            evCsv.WriteLine(Ui.S("zaman", "time") + Sep + "t[s]" + Sep + Ui.S("olay", "event") + Sep + Ui.S("deger", "value") + Sep + Ui.S("limit disi sure[s]", "out of limit[s]"));
                         }
                         recFile = Path.GetFileName(name + ".csv");
-                        Log("Kayıt: " + recFile);
+                        Log(Ui.S("Kayıt: ", "Recording: ") + recFile);
                     }
                     else if (!wantRecord && csv != null)
                     {
                         csv.Close(); csv = null;
                         if (evCsv != null) { evCsv.Close(); evCsv = null; }
                         recFile = "";
-                        Log("Kayıt durduruldu");
+                        Log(Ui.S("Kayıt durduruldu", "Recording stopped"));
                     }
                     string stamp = DateTime.Now.ToString("G", Cur) + Sep + t.ToString("F2", Cur);
                     if (csv != null)
@@ -612,15 +820,15 @@ class MainForm : Form
                         {
                             alarmOut = true; outSince = t;
                             lock (lk) violations++;
-                            Log("LİMİT DIŞI  " + s.Ch + " " + s.P.Code + " = " + Eng(v, s.P.Unit));
-                            if (evCsv != null) evCsv.WriteLine(stamp + Sep + "limit disi" + Sep + Plain(v, 4) + Sep);
+                            Log(Ui.S("LİMİT DIŞI  ", "OUT OF LIMIT  ") + s.Ch + " " + s.P.Code + " = " + Eng(v, s.P.Unit));
+                            if (evCsv != null) evCsv.WriteLine(stamp + Sep + Ui.S("limit disi", "out of limit") + Sep + Plain(v, 4) + Sep);
                             if (c.Beep) SystemSounds.Exclamation.Play();
                         }
                         else if (!bad && alarmOut)
                         {
                             alarmOut = false;
-                            Log("Normale döndü  " + s.Ch + " " + s.P.Code + " = " + Eng(v, s.P.Unit) + "  (limit dışı süre " + (t - outSince).ToString("F1", Cur) + " sn)");
-                            if (evCsv != null) evCsv.WriteLine(stamp + Sep + "normale dondu" + Sep + Plain(v, 4) + Sep + (t - outSince).ToString("F2", Cur));
+                            Log(Ui.S("Normale döndü  ", "Back to normal  ") + s.Ch + " " + s.P.Code + " = " + Eng(v, s.P.Unit) + Ui.S("  (limit dışı süre ", "  (out of limit for ") + (t - outSince).ToString("F1", Cur) + Ui.S(" sn)", " s)"));
+                            if (evCsv != null) evCsv.WriteLine(stamp + Sep + Ui.S("normale dondu", "back to normal") + Sep + Plain(v, 4) + Sep + (t - outSince).ToString("F2", Cur));
                         }
                     }
                     Thread.Sleep(Math.Max(c.Interval, MinInterval));
@@ -629,11 +837,11 @@ class MainForm : Form
                 {
                     if (!(e is IOException || e is TimeoutException)) throw;
                     errs++;
-                    Log("İletişim hatası: " + e.Message);
+                    Log(Ui.S("İletişim hatası: ", "Communication error: ") + e.Message);
                     if (errs >= 3 && u != null)
                     {
                         u.Dispose(); u = null;
-                        connected = false; deviceText = "Bağlantı koptu – yeniden deneniyor…";
+                        connected = false; deviceText = Ui.S("Bağlantı koptu – yeniden deneniyor…", "Connection lost – retrying…");
                         Thread.Sleep(1000);
                     }
                     else if (u != null)
@@ -644,21 +852,21 @@ class MainForm : Form
                 }
             }
         }
-        catch (Exception e) { Log("Beklenmeyen hata: " + e.Message); running = false; }
+        catch (Exception e) { Log(Ui.S("Beklenmeyen hata: ", "Unexpected error: ") + e.Message); running = false; }
         finally
         {
             if (csv != null) csv.Close();
             if (evCsv != null) evCsv.Close();
             if (u != null) u.Dispose();
             recFile = "";
-            Log("Ölçüm durdu");
+            Log(Ui.S("Ölçüm durdu", "Measurement stopped"));
         }
     }
 
     static string ShortIdn(string idn)
     {
         string[] p = idn.Split(',');
-        return p.Length >= 3 ? p[1] + "  (seri no " + p[2] + ")" : idn;
+        return p.Length >= 3 ? p[1] + Ui.S("  (seri no ", "  (serial no ") + p[2] + ")" : idn;
     }
 
     // Olcum calismiyorken cihaza kisa sureligine baglanir
@@ -668,7 +876,7 @@ class MainForm : Form
         {
             using (ILink u = OpenLink(c))
             {
-                if (u == null) { connected = false; deviceText = "Osiloskop bulunamadı (bağlı mı, başka program kullanıyor mu?)"; return false; }
+                if (u == null) { connected = false; deviceText = Ui.S("Osiloskop bulunamadı (bağlı mı, başka program kullanıyor mu?)", "Oscilloscope not found (is it connected, is another program using it?)"); return false; }
                 u.Clear(); u.SetTimeout(3000);
                 string idn = u.QueryText("*IDN?");
                 deviceText = ShortIdn(idn);
@@ -677,7 +885,7 @@ class MainForm : Form
                 return true;
             }
         }
-        catch (Exception e) { Log("Hata: " + e.Message); return false; }
+        catch (Exception e) { Log(Ui.S("Hata: ", "Error: ") + e.Message); return false; }
     }
 
     void TakeShot()
@@ -705,10 +913,10 @@ class MainForm : Form
                 lstLog.Items.Insert(0, logQueue.Dequeue());
                 if (lstLog.Items.Count > 1000) lstLog.Items.RemoveAt(lstLog.Items.Count - 1);
             }
-        if (!running && btnStart.Text.Contains("Durdur")) StopMeasure(); // is parcacigi kendi durduysa
+        if (!running && uiRunning) StopMeasure(); // is parcacigi kendi durduysa
 
         lblDevice.Text = deviceText;
-        lblDevice.ForeColor = connected ? Color.FromArgb(46, 125, 50) : Color.FromArgb(198, 40, 40);
+        lblDevice.ForeColor = connected ? Ui.Th.Good : Ui.Th.Bad;
 
         long n, viol; double tNow, rate = 0;
         lock (lk)
@@ -719,9 +927,9 @@ class MainForm : Form
                 SeriesData s = series[i];
                 cardValue[i].Text = Eng(s.Last, s.P.Unit);
                 cardStat[i].Text = s.N == 0 ? "" :
-                    "min " + Eng(s.Min, s.P.Unit) + "   maks " + Eng(s.Max, s.P.Unit) + "\nortalama " + Eng(s.Sum / s.N, s.P.Unit);
+                    "min " + Eng(s.Min, s.P.Unit) + Ui.S("   maks ", "   max ") + Eng(s.Max, s.P.Unit) + Ui.S("\nortalama ", "\navg ") + Eng(s.Sum / s.N, s.P.Unit);
                 bool alarm = cfg != null && i == cfg.AlarmIdx && alarmOut && running;
-                cardPanel[i].BackColor = alarm ? Color.FromArgb(255, 205, 210) : Color.White;
+                cardPanel[i].BackColor = alarm ? Ui.Th.CardAlarm : Ui.Th.Card;
             }
             if (series.Count > 0)
             {
@@ -730,13 +938,13 @@ class MainForm : Form
                 if (m >= 2 && T[T.Count - 1] > T[T.Count - m]) rate = (m - 1) / (T[T.Count - 1] - T[T.Count - m]);
             }
         }
-        stState.Text = running ? (connected ? "Ölçülüyor" : "Cihaz bekleniyor") : "Hazır";
-        stCount.Text = n > 0 ? n + " okuma" : "";
-        stRate.Text = running && rate > 0 ? rate.ToString("F1", Cur) + " okuma/sn" : "";
-        stTime.Text = running ? "Süre " + Span((DateTime.Now - startedAt).TotalSeconds) : "";
-        stAlarm.Text = cfg != null && cfg.AlarmIdx >= 0 && n > 0 ? "Limit dışı: " + viol + " kez" : "";
-        stAlarm.ForeColor = viol > 0 ? Color.FromArgb(198, 40, 40) : SystemColors.ControlText;
-        stFile.Text = recFile.Length > 0 ? "Kayıt: kayitlar\\" + recFile : "";
+        stState.Text = running ? (connected ? Ui.S("Ölçülüyor", "Measuring") : Ui.S("Cihaz bekleniyor", "Waiting for device")) : Ui.S("Hazır", "Ready");
+        stCount.Text = n > 0 ? n + Ui.S(" okuma", " readings") : "";
+        stRate.Text = running && rate > 0 ? rate.ToString("F1", Cur) + Ui.S(" okuma/sn", " readings/s") : "";
+        stTime.Text = running ? Ui.S("Süre ", "Elapsed ") + Span((DateTime.Now - startedAt).TotalSeconds) : "";
+        stAlarm.Text = cfg != null && cfg.AlarmIdx >= 0 && n > 0 ? Ui.S("Limit dışı: ", "Out of limit: ") + viol + Ui.S(" kez", " times") : "";
+        stAlarm.ForeColor = viol > 0 ? Ui.Th.Bad : Ui.Th.Text;
+        stFile.Text = recFile.Length > 0 ? Ui.S("Kayıt: kayitlar\\", "Recording: kayitlar\\") + recFile : "";
         RefreshChart(tNow);
     }
 
@@ -788,7 +996,7 @@ class MainForm : Form
             }
             Series c = chart.Series[i];
             c.LegendText = names[i];
-            c.Color = ChanColors[Array.IndexOf(Chans, names[i])];
+            c.Color = Ui.Th.Chan[Array.IndexOf(Chans, names[i])];
             double[] y = ys[i];
             for (int j = 0; j < y.Length; j++) y[j] *= k;
             c.Points.DataBindXY(xs[i], y);
@@ -801,7 +1009,7 @@ class MainForm : Form
                 if (double.IsNaN(lim)) continue;
                 StripLine sl = new StripLine();
                 sl.IntervalOffset = lim * k; sl.StripWidth = 0;
-                sl.BorderColor = Color.FromArgb(198, 40, 40); sl.BorderWidth = 1; sl.BorderDashStyle = ChartDashStyle.Dash;
+                sl.BorderColor = Ui.Th.Bad; sl.BorderWidth = 1; sl.BorderDashStyle = ChartDashStyle.Dash;
                 area.AxisY.StripLines.Add(sl);
             }
         area.RecalculateAxesScale();
@@ -854,6 +1062,8 @@ class MainForm : Form
                 "baglanti=" + (cmbConn.SelectedIndex == 1 ? "ag" : "usb"),
                 "adres=" + txtAddr.Text.Trim(),
                 "komut_seti=" + cmbDialect.SelectedIndex,
+                "dil=" + (Ui.En ? "en" : "tr"),
+                "tema=" + (Ui.Th.Dark ? "koyu" : "acik"),
             });
         }
         catch (IOException) { }
@@ -895,11 +1105,13 @@ class MainForm : Form
         if (d.TryGetValue("komut_seti", out v) && int.TryParse(v, out n) && n >= 0 && n < cmbDialect.Items.Count) cmbDialect.SelectedIndex = n;
     }
 
-    // --selftest <png> [saniye]: olcumu baslatir, bir sure sonra pencerenin goruntusunu kaydedip kapanir (gelistirme icin)
-    public void SelfTest(string png, int seconds)
+    // --selftest <png> [saniye] [toggle]: olcumu baslatir, bir sure sonra pencerenin goruntusunu kaydedip kapanir (gelistirme icin).
+    // "toggle" verilirse once dil ve tema calisirken degistirilir.
+    public void SelfTest(string png, int seconds, bool toggle)
     {
         Shown += delegate
         {
+            if (toggle) { cmbLang.SelectedIndex = 1 - cmbLang.SelectedIndex; Application.DoEvents(); cmbTheme.SelectedIndex = 1 - cmbTheme.SelectedIndex; Application.DoEvents(); }
             StartMeasure();
             System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
             t.Interval = seconds * 1000;
@@ -907,7 +1119,13 @@ class MainForm : Form
             {
                 t.Stop();
                 RefreshUi();
-                using (Bitmap b = new Bitmap(Width, Height)) { DrawToBitmap(b, new Rectangle(0, 0, Width, Height)); b.Save(png); }
+                // Ekrandaki gercek pikseller (yalnizca bu pencerenin alani); DrawToBitmap ozel cizimleri yanlis gosteriyor
+                TopMost = true; Activate(); Refresh(); Application.DoEvents(); Thread.Sleep(300); Application.DoEvents();
+                using (Bitmap b = new Bitmap(Width, Height))
+                {
+                    using (Graphics g = Graphics.FromImage(b)) g.CopyFromScreen(Location, Point.Empty, Size);
+                    b.Save(png);
+                }
                 Close();
             };
             t.Start();
@@ -923,7 +1141,7 @@ static class GuiProgram
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         MainForm f = new MainForm();
-        if (args.Length >= 2 && args[0] == "--selftest") f.SelfTest(args[1], args.Length > 2 ? int.Parse(args[2]) : 6);
+        if (args.Length >= 2 && args[0] == "--selftest") f.SelfTest(args[1], args.Length > 2 ? int.Parse(args[2]) : 6, args.Length > 3 && args[3] == "toggle");
         Application.Run(f);
     }
 }
