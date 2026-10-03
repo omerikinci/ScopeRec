@@ -20,7 +20,7 @@ Yeni bir marka eklemek için `cihaz.cs` içindeki `Dialect` sınıfına bir komu
 `OsiloTakip.exe` dosyasını çalıştırın, soldan kanal ve parametreleri seçip **Başlat**'a basın.
 
 - Kanal (C1–C4) ve ölçüm seçimi: RMS, ortalama (DC), tepe-tepe, frekans, periyot vb.
-- Canlı değer kutuları (min / maks / ortalama) ve canlı grafik
+- Canlı değer kutuları (min / maks / ortalama) ve canlı grafik (30 sn – 3 gün arası zaman aralığı; veri pencereden uzunsa alttaki çubukla geçmişte gezilir)
 - Limit kontrolü: değer alt/üst limitin dışına çıkınca uyarır, olayı saatiyle ve süresiyle kaydeder
 - CSV kaydı (`kayitlar` klasörüne; bilgisayarın bölge ayarıyla yazılır, Excel'de doğrudan açılır)
 - Osiloskop ekran görüntüsü alma (yalnızca Siglent)

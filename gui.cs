@@ -119,6 +119,7 @@ class SeriesData
     public List<double> T = new List<double>(), V = new List<double>();
     public double Last = double.NaN, Min, Max, Sum;
     public long N;
+    public static int Cap = 200000; // seri basina saklanan en fazla nokta; dolunca en eski %10 atilir
 
     public SeriesData(string ch, ParamInfo p) { Ch = ch; P = p; ResetStats(); }
     public string Key { get { return Ch + "_" + P.Code; } }
@@ -127,7 +128,7 @@ class SeriesData
 
     public void Add(double t, double v)
     {
-        if (T.Count >= 200000) { T.RemoveRange(0, 50000); V.RemoveRange(0, 50000); }
+        if (T.Count >= Cap) { T.RemoveRange(0, Cap / 10); V.RemoveRange(0, Cap / 10); }
         T.Add(t); V.Add(v);
         Last = v;
         if (double.IsNaN(v)) return;
@@ -177,6 +178,10 @@ class MainForm : Form
     Label lblLow, lblHigh, lblDevice;
     FlowLayoutPanel cards;
     Chart chart;
+    HScrollBar scroll;
+    Label lblHistory;
+    bool follow = true; // grafik en yeni veriyi izliyor
+    static readonly int[] WindowSecs = { 30, 120, 600, 1800, 3600, 6 * 3600, 12 * 3600, 24 * 3600, 3 * 24 * 3600 };
     ListBox lstLog;
     ToolStripStatusLabel stState, stCount, stRate, stTime, stFile, stAlarm;
     System.Windows.Forms.Timer uiTimer;
@@ -221,10 +226,11 @@ class MainForm : Form
     {
         TableLayoutPanel main = new TableLayoutPanel();
         main.Dock = DockStyle.Fill;
-        main.ColumnCount = 1; main.RowCount = 4;
+        main.ColumnCount = 1; main.RowCount = 5;
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 124));
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
         main.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
         main.Padding = new Padding(4);
 
@@ -241,9 +247,13 @@ class MainForm : Form
         bar.Controls.Add(cmbChart);
         bar.Controls.Add(MakeLabel(Ui.S("Zaman aralığı:", "Time span:"), 6));
         cmbWindow = MakeCombo(100);
-        cmbWindow.Items.AddRange(new object[] { Ui.S("30 sn", "30 s"), Ui.S("2 dk", "2 min"), Ui.S("10 dk", "10 min"), Ui.S("1 saat", "1 hour") });
+        cmbWindow.Items.AddRange(new object[] { Ui.S("30 sn", "30 s"), Ui.S("2 dk", "2 min"), Ui.S("10 dk", "10 min"), Ui.S("30 dk", "30 min"), Ui.S("1 saat", "1 hour"),
+            Ui.S("6 saat", "6 hours"), Ui.S("12 saat", "12 hours"), Ui.S("1 gün", "1 day"), Ui.S("3 gün", "3 days") });
         cmbWindow.SelectedIndex = 1;
         bar.Controls.Add(cmbWindow);
+        lblHistory = MakeLabel(Ui.S("◀ Geçmişe bakılıyor – canlı veri için çubuğu en sağa çekin", "◀ Viewing history – drag the bar fully right for live data"), 6);
+        lblHistory.ForeColor = Ui.Th.Bad; lblHistory.Visible = false;
+        bar.Controls.Add(lblHistory);
         main.Controls.Add(bar, 0, 1);
 
         chart = new Chart();
@@ -261,9 +271,14 @@ class MainForm : Form
         chart.Legends.Add(lg);
         main.Controls.Add(chart, 0, 2);
 
+        scroll = new HScrollBar();
+        scroll.Dock = DockStyle.Fill; scroll.Enabled = false;
+        scroll.ValueChanged += delegate { follow = scroll.Value >= scroll.Maximum - scroll.LargeChange + 1; };
+        main.Controls.Add(scroll, 0, 3);
+
         lstLog = new ListBox();
         lstLog.Dock = DockStyle.Fill; lstLog.IntegralHeight = false;
-        main.Controls.Add(lstLog, 0, 3);
+        main.Controls.Add(lstLog, 0, 4);
 
         // sol panel
         Panel left = new Panel();
@@ -431,6 +446,7 @@ class MainForm : Form
             ax.LabelStyle.ForeColor = t.Text; ax.TitleForeColor = t.Text;
         }
         chart.Legends[0].BackColor = Color.Transparent; chart.Legends[0].ForeColor = t.Text;
+        if (t.Dark) try { SetWindowTheme(scroll.Handle, "DarkMode_Explorer", null); } catch (Exception) { }
         if (IsHandleCreated) DarkTitleBar();
     }
 
@@ -635,6 +651,9 @@ class MainForm : Form
                 return;
             }
         }
+        // 3 gunluk gecmis icin nokta siniri: tek seride ~2,6 milyon (8 okuma/sn x 3 gun), cok seride bellek icin bolusturulur
+        SeriesData.Cap = Math.Max(200000, 6000000 / list.Count);
+        follow = true;
         lock (lk) { series = list; samples = 0; violations = 0; lastT = 0; }
         cfg = c;
         alarmOut = false;
@@ -901,8 +920,8 @@ class MainForm : Form
 
     double WindowSeconds()
     {
-        switch (cmbWindow.SelectedIndex) { case 0: return 30; case 1: return 120; case 2: return 600; }
-        return 3600;
+        int i = cmbWindow.SelectedIndex;
+        return i >= 0 && i < WindowSecs.Length ? WindowSecs[i] : 120;
     }
 
     void RefreshUi()
@@ -952,19 +971,45 @@ class MainForm : Form
     {
         ParamInfo p = (ParamInfo)cmbChart.SelectedItem;
         double win = WindowSeconds();
-        double t0 = Math.Max(0, tNow - win);
+        // Zaman ekseni birimi pencereye gore: saniye / dakika / saat
+        double div = win <= 120 ? 1 : win <= 7200 ? 60 : 3600;
+        string xUnit = div == 1 ? "s" : div == 60 ? Ui.S("dk", "min") : Ui.S("saat", "h");
         List<string> names = new List<string>();
         List<double[]> xs = new List<double[]>(), ys = new List<double[]>();
-        double maxAbs = 0;
+        double maxAbs = 0, t0, t1;
         lock (lk)
         {
+            // Kaydirma: veri pencereden uzunsa cubuk gecmiste gezdirir; en sagda ise canli veriyi izler
+            double tFirst = series.Count > 0 && series[0].T.Count > 0 ? series[0].T[0] : 0;
+            double total = tNow - tFirst;
+            if (total <= win)
+            {
+                follow = true;
+                scroll.Enabled = false;
+                t0 = tFirst; t1 = tFirst + win;
+            }
+            else
+            {
+                int large = (int)Math.Max(1, win);
+                int max = (int)Math.Ceiling(total);
+                int top = Math.Max(0, max - large + 1); // cubugun alabilecegi en buyuk deger
+                scroll.Enabled = true;
+                if (scroll.Value > top) scroll.Value = top;
+                scroll.Maximum = max; scroll.LargeChange = large; scroll.SmallChange = Math.Max(1, large / 10);
+                if (follow) scroll.Value = top;
+                t0 = follow ? tNow - win : tFirst + scroll.Value;
+                t1 = t0 + win;
+            }
+            lblHistory.Visible = !follow;
             foreach (SeriesData s in series)
             {
                 if (s.P != p) continue;
-                int i0 = s.T.BinarySearch(t0);
+                int i0 = s.T.BinarySearch(t0), i1 = s.T.BinarySearch(t1);
                 if (i0 < 0) i0 = ~i0;
+                if (i1 < 0) i1 = ~i1; else i1++;
                 List<double> x = new List<double>(), y = new List<double>();
-                Decimate(s.T, s.V, i0, s.T.Count, x, y);
+                Decimate(s.T, s.V, i0, i1, x, y);
+                for (int j = 0; j < x.Count; j++) x[j] /= div;
                 foreach (double v in y) if (Math.Abs(v) > maxAbs) maxAbs = Math.Abs(v);
                 names.Add(s.Ch); xs.Add(x.ToArray()); ys.Add(y.ToArray());
             }
@@ -982,8 +1027,9 @@ class MainForm : Form
         }
         ChartArea area = chart.ChartAreas[0];
         area.AxisY.Title = p.Code + " – " + p.Name + " [" + pre + p.Unit + "]";
-        area.AxisX.Minimum = Math.Floor(t0);
-        area.AxisX.Maximum = Math.Max(Math.Ceiling(tNow), Math.Floor(t0) + Math.Min(win, 10));
+        area.AxisX.Title = Ui.S("Süre [", "Time [") + xUnit + "]";
+        area.AxisX.Minimum = t0 / div;
+        area.AxisX.Maximum = t1 / div;
 
         if (chart.Series.Count != names.Count) chart.Series.Clear();
         for (int i = 0; i < names.Count; i++)
@@ -1106,18 +1152,19 @@ class MainForm : Form
     }
 
     // --selftest <png> [saniye] [toggle]: olcumu baslatir, bir sure sonra pencerenin goruntusunu kaydedip kapanir (gelistirme icin).
-    // "toggle" verilirse once dil ve tema calisirken degistirilir.
-    public void SelfTest(string png, int seconds, bool toggle)
+    // "toggle": once dil ve tema calisirken degistirilir. "scroll": goruntuden once grafik gecmisin basina kaydirilir.
+    public void SelfTest(string png, int seconds, string mode)
     {
         Shown += delegate
         {
-            if (toggle) { cmbLang.SelectedIndex = 1 - cmbLang.SelectedIndex; Application.DoEvents(); cmbTheme.SelectedIndex = 1 - cmbTheme.SelectedIndex; Application.DoEvents(); }
+            if (mode == "toggle") { cmbLang.SelectedIndex = 1 - cmbLang.SelectedIndex; Application.DoEvents(); cmbTheme.SelectedIndex = 1 - cmbTheme.SelectedIndex; Application.DoEvents(); }
             StartMeasure();
             System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
             t.Interval = seconds * 1000;
             t.Tick += delegate
             {
                 t.Stop();
+                if (mode == "scroll") scroll.Value = 0; // gecmisin basina kaydir
                 RefreshUi();
                 // Ekrandaki gercek pikseller (yalnizca bu pencerenin alani); DrawToBitmap ozel cizimleri yanlis gosteriyor
                 TopMost = true; Activate(); Refresh(); Application.DoEvents(); Thread.Sleep(300); Application.DoEvents();
@@ -1141,7 +1188,7 @@ static class GuiProgram
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         MainForm f = new MainForm();
-        if (args.Length >= 2 && args[0] == "--selftest") f.SelfTest(args[1], args.Length > 2 ? int.Parse(args[2]) : 6, args.Length > 3 && args[3] == "toggle");
+        if (args.Length >= 2 && args[0] == "--selftest") f.SelfTest(args[1], args.Length > 2 ? int.Parse(args[2]) : 6, args.Length > 3 ? args[3] : "");
         Application.Run(f);
     }
 }
