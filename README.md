@@ -26,6 +26,19 @@ Yeni bir marka eklemek için `cihaz.cs` içindeki `Dialect` sınıfına bir komu
 - Osiloskop ekran görüntüsü alma (yalnızca Siglent)
 - Türkçe / İngilizce arayüz ve açık / koyu tema (üst çubuktaki listelerden)
 
+## Kayıt görüntüleyici (OsiloKayıt)
+
+`OsiloKayit.exe` önceden alınmış kayıtları inceler. Ölçüm dosyasını (`olcum_….csv`) ve log dosyasını (`…_log.txt` ya da `…_olaylar.csv`)
+pencereye sürükleyip bırakın; yalnızca ölçüm dosyası bırakılırsa yanındaki log kendiliğinden açılır.
+
+- Tüm kaydın grafiği; fare tekerleğiyle yakınlaştırma, sürükleyerek aralık seçme, alttaki çubukla gezme
+- Olay listesi: limit dışı aralıklar, iletişim hataları, bağlantı kopmaları, veri kesintileri; olaya tıklayınca grafik oraya gider
+- Limit dışı aralıklar grafikte kırmızı şeritle gösterilir
+- Limit analizi: logu olmayan eski kayıtlarda da alt/üst limit girip limit dışı aralıkları bulur
+- Fare altındaki anın saati ve değerleri durum çubuğunda
+
+OsiloTakip kayıt sırasında `…_log.txt` dosyasını da yazar (zaman, t, mesaj; sekmeyle ayrık).
+
 ## Gereksinimler
 
 - Windows, .NET Framework 4 (Windows ile birlikte gelir)
@@ -53,7 +66,9 @@ sds.exe --tcp 5025              TCP köprüsü
 |---|---|
 | `usb.cs` | WinUSB üzerinden USBTMC çerçevelemesi (ortak) |
 | `cihaz.cs` | Bağlantı arayüzü, ağ bağlantısı ve marka bazlı komut setleri |
-| `gui.cs` | Pencereli uygulama |
+| `ortak.cs` | Dil, tema ve sayı biçimlendirme (iki uygulama için ortak) |
+| `gui.cs` | OsiloTakip: ölçüm uygulaması |
+| `kayit.cs` | OsiloKayıt: kayıt görüntüleyici |
 | `sds.cs` | Komut satırı aracı |
 
 ## Not
