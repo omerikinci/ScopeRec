@@ -1,7 +1,19 @@
 # OsiloTakip
 
-Siglent osiloskoptan (SDS1104X-E ile denendi) USB üzerinden sürekli ölçüm okuyan Windows uygulaması.
+Osiloskoptan USB ya da ağ üzerinden sürekli ölçüm okuyan Windows uygulaması.
 Osiloskopla WinUSB sürücüsü üzerinden doğrudan konuşur; NI-VISA ya da USBTMC sürücüsü gerekmez.
+
+## Desteklenen cihazlar
+
+| Marka | Durum |
+|---|---|
+| Siglent (SDS1104X-E) | Gerçek cihazla denendi |
+| Rigol, Keysight / Agilent, Tektronix | Komut setleri kılavuzlara göre yazıldı, **gerçek cihazla denenmedi** |
+| Diğer markalar | Keysight tarzı genel SCPI komutları denenir |
+
+Komut seti cihaz kimliğinden (`*IDN?`) otomatik seçilir; soldaki **Komut seti** listesinden elle de seçilebilir.
+Bağlantı USB (WinUSB sürücüsüyle, USB Test & Measurement sınıfındaki ilk cihaz) ya da ağ (ham SCPI soketi, `IP:port`) olabilir.
+Yeni bir marka eklemek için `cihaz.cs` içindeki `Dialect` sınıfına bir komut şablonu eklemek yeterlidir.
 
 ## Kullanım
 
@@ -11,7 +23,7 @@ Osiloskopla WinUSB sürücüsü üzerinden doğrudan konuşur; NI-VISA ya da USB
 - Canlı değer kutuları (min / maks / ortalama) ve canlı grafik
 - Limit kontrolü: değer alt/üst limitin dışına çıkınca uyarır, olayı saatiyle ve süresiyle kaydeder
 - CSV kaydı (`kayitlar` klasörüne; bilgisayarın bölge ayarıyla yazılır, Excel'de doğrudan açılır)
-- Osiloskop ekran görüntüsü alma
+- Osiloskop ekran görüntüsü alma (yalnızca Siglent)
 
 ## Gereksinimler
 
@@ -39,6 +51,7 @@ sds.exe --tcp 5025              TCP köprüsü
 | Dosya | İçerik |
 |---|---|
 | `usb.cs` | WinUSB üzerinden USBTMC çerçevelemesi (ortak) |
+| `cihaz.cs` | Bağlantı arayüzü, ağ bağlantısı ve marka bazlı komut setleri |
 | `gui.cs` | Pencereli uygulama |
 | `sds.cs` | Komut satırı aracı |
 

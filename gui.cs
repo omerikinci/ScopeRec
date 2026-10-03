@@ -79,6 +79,9 @@ class Config
     public int AlarmIdx = -1;          // series icindeki sira, -1 = kapali
     public double Low = double.NaN, High = double.NaN;
     public bool Beep;
+    public bool Lan;                   // false = USB (WinUSB), true = ag
+    public string Addr = "";
+    public int DialectIdx;             // Dialect.Names icindeki sira
 }
 
 class MainForm : Form
@@ -101,8 +104,8 @@ class MainForm : Form
     CheckBox[] chkChan = new CheckBox[4];
     CheckedListBox lstParams;
     NumericUpDown numInterval;
-    ComboBox cmbAlarmCh, cmbAlarmParam, cmbChart, cmbWindow;
-    TextBox txtLow, txtHigh;
+    ComboBox cmbAlarmCh, cmbAlarmParam, cmbChart, cmbWindow, cmbConn, cmbDialect;
+    TextBox txtLow, txtHigh, txtAddr;
     Label lblLow, lblHigh, lblDevice;
     FlowLayoutPanel cards;
     Chart chart;
@@ -140,7 +143,7 @@ class MainForm : Form
         uiTimer.Tick += delegate { RefreshUi(); };
         uiTimer.Start();
         FormClosing += delegate { StopMeasure(); SaveSettings(); };
-        Shown += delegate { ThreadPool.QueueUserWorkItem(delegate { ProbeDevice(); }); };
+        Shown += delegate { Config c = ReadConn(); ThreadPool.QueueUserWorkItem(delegate { if (!running) WithDevice(c, null); }); };
     }
 
     // ---------------------------------------------------------------- arayuz kurulumu
@@ -199,6 +202,20 @@ class MainForm : Form
         left.Padding = new Padding(6);
         int y = 6;
 
+        GroupBox gConn = MakeGroup("Bağlantı", left, ref y, 112);
+        cmbConn = MakeCombo(70); cmbConn.Items.AddRange(new object[] { "USB", "Ağ" }); cmbConn.SelectedIndex = 0;
+        cmbConn.SetBounds(12, 22, 70, 24);
+        txtAddr = new TextBox(); txtAddr.SetBounds(88, 22, 138, 24);
+        cmbConn.SelectedIndexChanged += delegate { txtAddr.Enabled = cmbConn.SelectedIndex == 1; };
+        txtAddr.Enabled = false;
+        Label lAddr = MakeLabel("Ağ için IP adresi (örn. 192.168.1.50:5025)", 0);
+        lAddr.Font = new Font("Segoe UI", 7.5f); lAddr.ForeColor = Color.DimGray;
+        lAddr.SetBounds(12, 50, 216, 16);
+        Label lDia = MakeLabel("Komut seti:", 0); lDia.SetBounds(12, 78, 70, 20);
+        cmbDialect = MakeCombo(140); cmbDialect.Items.AddRange(Dialect.Names); cmbDialect.SelectedIndex = 0;
+        cmbDialect.SetBounds(86, 74, 140, 24);
+        gConn.Controls.AddRange(new Control[] { cmbConn, txtAddr, lAddr, lDia, cmbDialect });
+
         GroupBox gCh = MakeGroup("Kanallar", left, ref y, 52);
         for (int i = 0; i < 4; i++)
         {
@@ -210,10 +227,10 @@ class MainForm : Form
         }
         chkChan[0].Checked = true;
 
-        GroupBox gPar = MakeGroup("Ölçülecek parametreler", left, ref y, 250);
+        GroupBox gPar = MakeGroup("Ölçülecek parametreler", left, ref y, 190);
         lstParams = new CheckedListBox();
         lstParams.CheckOnClick = true; lstParams.IntegralHeight = false;
-        lstParams.SetBounds(8, 22, 218, 220);
+        lstParams.SetBounds(8, 22, 218, 160);
         foreach (ParamInfo p in ParamInfo.All) lstParams.Items.Add(p);
         lstParams.SetItemChecked(0, true);
         gPar.Controls.Add(lstParams);
@@ -245,7 +262,7 @@ class MainForm : Form
         chkBeep.SetBounds(12, 142, 210, 22);
         gAl.Controls.AddRange(new Control[] { chkAlarm, cmbAlarmCh, cmbAlarmParam, lblLow, txtLow, lblHigh, txtHigh, chkBeep });
 
-        lockWhileRunning = new Control[] { gCh, gPar, gInt, gAl };
+        lockWhileRunning = new Control[] { gConn, gCh, gPar, gInt, gAl };
 
         // ust cubuk
         Panel top = new Panel();
@@ -382,7 +399,12 @@ class MainForm : Form
 
     void StartMeasure()
     {
-        Config c = new Config();
+        Config c = ReadConn();
+        if (c.Lan && c.Addr.Length == 0)
+        {
+            MessageBox.Show(this, "Ağ bağlantısı için osiloskobun IP adresini girin.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
         for (int i = 0; i < 4; i++) if (chkChan[i].Checked) c.Chans.Add(Chans[i]);
         foreach (object o in lstParams.CheckedItems) c.Params.Add((ParamInfo)o);
         if (c.Chans.Count == 0 || c.Params.Count == 0)
@@ -471,17 +493,39 @@ class MainForm : Form
         return m.Success ? double.Parse(m.Value, Inv) : double.NaN; // "****" = gecersiz olcum
     }
 
-    static void Shot(Usb u, string path)
+    // Baglanti ayarlarini arayuzden okur (arayuz is parcaciginda cagrilmali)
+    Config ReadConn()
     {
+        Config c = new Config();
+        c.Lan = cmbConn.SelectedIndex == 1;
+        c.Addr = txtAddr.Text.Trim();
+        c.DialectIdx = cmbDialect.SelectedIndex;
+        return c;
+    }
+
+    static ILink OpenLink(Config c)
+    {
+        if (c.Lan) return TcpLink.Open(c.Addr, 3000);
+        return Usb.Open(3000);
+    }
+
+    // basePath uzantisizdir; uzanti markaya gore eklenir
+    void Shot(ILink u, Dialect d, string basePath)
+    {
+        if (d.ScreenshotCmd == null) { Log("Ekran görüntüsü bu komut setinde (" + d.Name + ") desteklenmiyor"); return; }
         u.SetTimeout(15000);
-        try { File.WriteAllBytes(path, u.Query("SCDP")); }
+        try { File.WriteAllBytes(basePath + d.ScreenshotExt, u.Query(d.ScreenshotCmd)); }
         finally { u.SetTimeout(3000); }
+        Log("Ekran görüntüsü kaydedildi: " + Path.GetFileName(basePath + d.ScreenshotExt));
     }
 
     void Work()
     {
         Config c = cfg;
-        Usb u = null;
+        ILink u = null;
+        Dialect dl = null;
+        List<string> codes = new List<string>();
+        foreach (ParamInfo p in c.Params) codes.Add(p.Code);
         StreamWriter csv = null, evCsv = null;
         Stopwatch sw = Stopwatch.StartNew();
         int errs = 0;
@@ -496,7 +540,7 @@ class MainForm : Form
                 {
                     if (u == null)
                     {
-                        u = Usb.Open(3000);
+                        u = OpenLink(c);
                         if (u == null)
                         {
                             connected = false; deviceText = "Osiloskop bulunamadı – bekleniyor…";
@@ -504,27 +548,18 @@ class MainForm : Form
                             continue;
                         }
                         u.Clear(); u.SetTimeout(3000);
-                        deviceText = ShortIdn(u.QueryText("*IDN?"));
+                        string idn = u.QueryText("*IDN?");
+                        dl = Dialect.Pick(c.DialectIdx, idn);
+                        deviceText = ShortIdn(idn);
                         connected = true;
-                        Log("Bağlandı: " + deviceText);
+                        Log("Bağlandı: " + deviceText + "  –  komut seti: " + dl.Name);
                     }
                     string shot = shotRequest;
-                    if (shot != null) { shotRequest = null; Shot(u, shot); Log("Ekran görüntüsü kaydedildi: " + Path.GetFileName(shot)); }
+                    if (shot != null) { shotRequest = null; Shot(u, dl, shot); }
 
                     int k = 0;
                     foreach (string ch in c.Chans)
-                    {
-                        // Tek parametrede dogrudan sor; birden fazlaysa ALL ile hepsi ayni yakalamadan gelir
-                        string r = u.QueryText(ch + ":PAVA? " + (c.Params.Count == 1 ? c.Params[0].Code : "ALL"));
-                        string[] tok = r.Substring(r.LastIndexOf(' ') + 1).Split(',');
-                        Dictionary<string, string> d = new Dictionary<string, string>();
-                        for (int i = 0; i + 1 < tok.Length; i += 2) d[tok[i]] = tok[i + 1];
-                        foreach (ParamInfo p in c.Params)
-                        {
-                            string s;
-                            vals[k++] = d.TryGetValue(p.Code, out s) ? ParseValue(s) : double.NaN;
-                        }
-                    }
+                        foreach (double v in dl.Measure(u, Array.IndexOf(Chans, ch) + 1, codes)) vals[k++] = v;
                     errs = 0;
                     double t = sw.Elapsed.TotalSeconds;
                     lock (lk)
@@ -601,7 +636,11 @@ class MainForm : Form
                         connected = false; deviceText = "Bağlantı koptu – yeniden deneniyor…";
                         Thread.Sleep(1000);
                     }
-                    else if (u != null) { u.Clear(); u.SetTimeout(3000); }
+                    else if (u != null)
+                    {
+                        try { u.Clear(); u.SetTimeout(3000); }
+                        catch (IOException) { errs = 3; } // baglanti gitmis: sonraki turda yeniden ac
+                    }
                 }
             }
         }
@@ -623,34 +662,31 @@ class MainForm : Form
     }
 
     // Olcum calismiyorken cihaza kisa sureligine baglanir
-    bool WithDevice(Action<Usb> act)
+    bool WithDevice(Config c, Action<ILink, Dialect> act)
     {
         try
         {
-            using (Usb u = Usb.Open(3000))
+            using (ILink u = OpenLink(c))
             {
                 if (u == null) { connected = false; deviceText = "Osiloskop bulunamadı (bağlı mı, başka program kullanıyor mu?)"; return false; }
                 u.Clear(); u.SetTimeout(3000);
-                deviceText = ShortIdn(u.QueryText("*IDN?"));
+                string idn = u.QueryText("*IDN?");
+                deviceText = ShortIdn(idn);
                 connected = true;
-                if (act != null) act(u);
+                if (act != null) act(u, Dialect.Pick(c.DialectIdx, idn));
                 return true;
             }
         }
         catch (Exception e) { Log("Hata: " + e.Message); return false; }
     }
 
-    void ProbeDevice() { if (!running) WithDevice(null); }
-
     void TakeShot()
     {
         Directory.CreateDirectory(RecDir);
-        string path = Path.Combine(RecDir, "ekran_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".bmp");
+        string path = Path.Combine(RecDir, "ekran_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
         if (running) { shotRequest = path; return; }
-        ThreadPool.QueueUserWorkItem(delegate
-        {
-            if (WithDevice(delegate(Usb u) { Shot(u, path); })) Log("Ekran görüntüsü kaydedildi: " + Path.GetFileName(path));
-        });
+        Config c = ReadConn();
+        ThreadPool.QueueUserWorkItem(delegate { WithDevice(c, delegate(ILink u, Dialect d) { Shot(u, d, path); }); });
     }
 
     // ---------------------------------------------------------------- arayuz yenileme
@@ -815,6 +851,9 @@ class MainForm : Form
                 "limit_alt=" + txtLow.Text,
                 "limit_ust=" + txtHigh.Text,
                 "ses=" + (chkBeep.Checked ? "1" : "0"),
+                "baglanti=" + (cmbConn.SelectedIndex == 1 ? "ag" : "usb"),
+                "adres=" + txtAddr.Text.Trim(),
+                "komut_seti=" + cmbDialect.SelectedIndex,
             });
         }
         catch (IOException) { }
@@ -851,6 +890,9 @@ class MainForm : Form
         if (d.TryGetValue("limit_alt", out v)) txtLow.Text = v;
         if (d.TryGetValue("limit_ust", out v)) txtHigh.Text = v;
         if (d.TryGetValue("ses", out v)) chkBeep.Checked = v == "1";
+        if (d.TryGetValue("adres", out v)) txtAddr.Text = v;
+        if (d.TryGetValue("baglanti", out v)) cmbConn.SelectedIndex = v == "ag" ? 1 : 0;
+        if (d.TryGetValue("komut_seti", out v) && int.TryParse(v, out n) && n >= 0 && n < cmbDialect.Items.Count) cmbDialect.SelectedIndex = n;
     }
 
     // --selftest <png> [saniye]: olcumu baslatir, bir sure sonra pencerenin goruntusunu kaydedip kapanir (gelistirme icin)

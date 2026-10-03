@@ -13,7 +13,7 @@ using System.Threading;
 using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
 
-class Usb : IDisposable
+class Usb : ILink
 {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     struct IfDesc { public byte bLength, bDescriptorType, bInterfaceNumber, bAlternateSetting, bNumEndpoints, bInterfaceClass, bInterfaceSubClass, bInterfaceProtocol, iInterface; }
@@ -50,11 +50,16 @@ class Usb : IDisposable
             using (RegistryKey usb = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\USB"))
                 foreach (string id in usb.GetSubKeyNames())
                 {
-                    if (!id.StartsWith("VID_F4EC", StringComparison.OrdinalIgnoreCase) &&
-                        !id.StartsWith("VID_F4ED", StringComparison.OrdinalIgnoreCase)) continue;
                     using (RegistryKey dev = usb.OpenSubKey(id))
                         foreach (string serial in dev.GetSubKeyNames())
                         {
+                            // Uretici ayirt etmeden WinUSB surucusune bagli tum cihazlar aday; USBTMC olup olmadigina Open bakar
+                            try
+                            {
+                                using (RegistryKey inst = dev.OpenSubKey(serial))
+                                    if (!"WinUSB".Equals(inst.GetValue("Service") as string, StringComparison.OrdinalIgnoreCase)) continue;
+                            }
+                            catch { continue; }
                             string prefix = @"\\?\usb#" + id.ToLowerInvariant() + "#" + serial.ToLowerInvariant() + "#";
                             try
                             {
@@ -86,7 +91,8 @@ class Usb : IDisposable
             u.file = f; u.h = ih; u.DevicePath = p;
             u.tag = (byte)new Random().Next(1, 255); // onceki calistirmanin etiketleriyle cakismasin
             IfDesc d;
-            WinUsb_QueryInterfaceSettings(ih, 0, out d);
+            // USB Test & Measurement sinifi (0xFE / 0x03) degilse olcum cihazi degildir
+            if (!WinUsb_QueryInterfaceSettings(ih, 0, out d) || d.bInterfaceClass != 0xFE || d.bInterfaceSubClass != 3) { u.Dispose(); continue; }
             u.ifNum = d.bInterfaceNumber;
             for (byte i = 0; i < d.bNumEndpoints; i++)
             {
