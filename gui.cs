@@ -221,7 +221,7 @@ class MainForm : Form
         main.Controls.Add(scroll, 0, 3);
 
         lstLog = new ListBox();
-        lstLog.Dock = DockStyle.Fill; lstLog.IntegralHeight = false;
+        lstLog.Dock = DockStyle.Fill; lstLog.IntegralHeight = false; lstLog.HorizontalScrollbar = true;
         main.Controls.Add(lstLog, 0, 4);
 
         // sol panel
@@ -642,6 +642,13 @@ class MainForm : Form
         }
     }
 
+    // Kayit bitince dosyalarin tam yerini olay listesine yazar
+    void LogSaved(string stem)
+    {
+        Log(Ui.S("Kayıt dosyası: ", "Recording file: ") + stem + ".csv");
+        Log(Ui.S("Log dosyası: ", "Log file: ") + stem + "_log.txt");
+    }
+
     void SetLogFile(string path)
     {
         lock (logQueue)
@@ -790,6 +797,7 @@ class MainForm : Form
         List<string> codes = new List<string>();
         foreach (ParamInfo p in c.Params) codes.Add(p.Code);
         StreamWriter csv = null, evCsv = null;
+        string recPath = null; // acik kaydin uzantisiz tam yolu
         Stopwatch sw = Stopwatch.StartNew();
         runClock = sw;
         int errs = 0;
@@ -849,16 +857,19 @@ class MainForm : Form
                             evCsv.WriteLine(Ui.S("zaman", "time") + Sep + "t[s]" + Sep + Ui.S("olay", "event") + Sep + Ui.S("deger", "value") + Sep + Ui.S("limit disi sure[s]", "out of limit[s]"));
                         }
                         SetLogFile(name + "_log.txt");
+                        recPath = name;
                         recFile = Path.GetFileName(name + ".csv");
                         Log(Ui.S("Kayıt: ", "Recording: ") + recFile);
                     }
                     else if (!wantRecord && csv != null)
                     {
+                        // once olay listesine (ve log dosyasina) nereye yazildigini dus, sonra dosyalari kapat
+                        Log(Ui.S("Kayıt durduruldu", "Recording stopped"));
+                        LogSaved(recPath); recPath = null;
                         csv.Close(); csv = null;
                         SetLogFile(null);
                         if (evCsv != null) { evCsv.Close(); evCsv = null; }
                         recFile = "";
-                        Log(Ui.S("Kayıt durduruldu", "Recording stopped"));
                     }
                     string stamp = DateTime.Now.ToString("G", Cur) + Sep + t.ToString("F2", Cur);
                     if (csv != null)
@@ -918,6 +929,7 @@ class MainForm : Form
             if (u != null) u.Dispose();
             recFile = "";
             Log(Ui.S("Ölçüm durdu", "Measurement stopped"));
+            if (recPath != null) LogSaved(recPath);
             SetLogFile(null);
         }
     }
@@ -1232,6 +1244,7 @@ class MainForm : Form
             {
                 t.Stop();
                 if (mode == "scroll") scroll.Value = 0; // gecmisin basina kaydir
+                if (mode == "stop") { StopMeasure(); Application.DoEvents(); Thread.Sleep(600); Application.DoEvents(); } // durdurduktan sonraki olay listesi
                 if (mode == "clear") { testNoAsk = true; ClearChart(); Application.DoEvents(); Thread.Sleep(1200); Application.DoEvents(); }
                 RefreshUi();
                 // Ekrandaki gercek pikseller (yalnizca bu pencerenin alani); DrawToBitmap ozel cizimleri yanlis gosteriyor
