@@ -124,6 +124,11 @@ class MainForm : Form
     Point hoverPt;
     bool hovering;
     double chartDiv = 1; // zaman ekseninin birimi (saniye / dakika / saat) kac saniye
+    double zoomWin;                                  // tekerlekle secilen zaman araligi (sn); 0 = listedeki secim
+    double yLo = double.NaN, yHi = double.NaN;       // tekerlekle secilen deger araligi (temel birim); NaN = otomatik
+    double pendingStart = double.NaN;                // yakinlastirmadan sonra gorunumun baslayacagi an
+    double viewT0, viewT1;                           // grafikte su an gosterilen zaman araligi (sn)
+    double lastK = 1;                                // deger ekseninin olcegi (ornegin mV icin 1000)
     static readonly int[] WindowSecs = { 30, 120, 600, 1800, 3600, 6 * 3600, 12 * 3600, 24 * 3600, 3 * 24 * 3600 };
     ListBox lstLog;
     ToolStripStatusLabel stState, stCount, stRate, stTime, stFile, stAlarm;
@@ -187,12 +192,14 @@ class MainForm : Form
         cmbChart = MakeCombo(190);
         foreach (ParamInfo p in ParamInfo.All) cmbChart.Items.Add(p);
         cmbChart.SelectedIndex = 0;
+        cmbChart.SelectedIndexChanged += delegate { yLo = yHi = double.NaN; }; // baska parametrenin deger araligi anlamsiz
         bar.Controls.Add(cmbChart);
         bar.Controls.Add(MakeLabel(Ui.S("Zaman aralığı:", "Time span:"), 6));
         cmbWindow = MakeCombo(100);
         cmbWindow.Items.AddRange(new object[] { Ui.S("30 sn", "30 s"), Ui.S("2 dk", "2 min"), Ui.S("10 dk", "10 min"), Ui.S("30 dk", "30 min"), Ui.S("1 saat", "1 hour"),
             Ui.S("6 saat", "6 hours"), Ui.S("12 saat", "12 hours"), Ui.S("1 gün", "1 day"), Ui.S("3 gün", "3 days") });
         cmbWindow.SelectedIndex = 1;
+        cmbWindow.SelectedIndexChanged += delegate { zoomWin = 0; };
         bar.Controls.Add(cmbWindow);
         Button btnClear = new Button();
         btnClear.Text = Ui.S("Grafiği temizle", "Clear chart"); btnClear.Size = new Size(120, 25); btnClear.Margin = new Padding(12, 2, 0, 0);
@@ -221,6 +228,9 @@ class MainForm : Form
         hovering = false;
         chart.MouseMove += delegate(object s, MouseEventArgs e) { hoverPt = e.Location; hovering = true; UpdateHover(); };
         chart.MouseLeave += delegate { hovering = false; lblHover.Visible = false; };
+        chart.MouseEnter += delegate { FocusChart(); };
+        chart.MouseWheel += delegate(object s, MouseEventArgs e) { ChartWheel(e); };
+        chart.MouseDoubleClick += delegate { ResetZoom(); };
         main.Controls.Add(chart, 0, 2);
 
         scroll = new HScrollBar();
@@ -704,7 +714,7 @@ class MainForm : Form
         }
         // 3 gunluk gecmis icin nokta siniri: tek seride ~2,6 milyon (8 okuma/sn x 3 gun), cok seride bellek icin bolusturulur
         SeriesData.Cap = Math.Max(200000, 6000000 / list.Count);
-        follow = true;
+        follow = true; zoomWin = 0; yLo = yHi = double.NaN; pendingStart = double.NaN;
         lock (lk) { series = list; samples = 0; violations = 0; lastT = 0; }
         cfg = c;
         alarmOut = false;
@@ -981,6 +991,7 @@ class MainForm : Form
 
     double WindowSeconds()
     {
+        if (zoomWin > 0) return zoomWin;
         int i = cmbWindow.SelectedIndex;
         return i >= 0 && i < WindowSecs.Length ? WindowSecs[i] : 120;
     }
@@ -1058,11 +1069,21 @@ class MainForm : Form
                 scroll.Enabled = true;
                 if (scroll.Value > top) scroll.Value = top;
                 scroll.Maximum = max; scroll.LargeChange = large; scroll.SmallChange = Math.Max(1, large / 10);
+                if (!double.IsNaN(pendingStart))
+                {
+                    int v = (int)Math.Max(0, Math.Min(Math.Round(pendingStart - tFirst), top));
+                    pendingStart = double.NaN;
+                    scroll.Value = v;
+                    follow = v >= top;
+                }
                 if (follow) scroll.Value = top;
                 t0 = follow ? tNow - win : tFirst + scroll.Value;
                 t1 = t0 + win;
             }
-            lblHistory.Visible = !follow;
+            bool zoomed = zoomWin > 0 || !double.IsNaN(yLo);
+            lblHistory.Text = !follow ? Ui.S("Geçmiş gösteriliyor – canlı için çubuğu sağa çekin", "Viewing history – drag the bar right for live")
+                                      : Ui.S("Yakınlaştırıldı – sıfırlamak için grafiğe çift tıklayın", "Zoomed – double-click the chart to reset");
+            lblHistory.Visible = !follow || zoomed;
             foreach (SeriesData s in series)
             {
                 if (s.P != p) continue;
@@ -1089,7 +1110,11 @@ class MainForm : Form
         }
         ChartArea area = chart.ChartAreas[0];
         area.AxisY.Title = p.Code + " – " + p.Name + " [" + pre + p.Unit + "]";
+        lastK = k;
+        area.AxisY.Minimum = double.IsNaN(yLo) ? double.NaN : yLo * k;
+        area.AxisY.Maximum = double.IsNaN(yLo) ? double.NaN : yHi * k;
         area.AxisX.Title = Ui.S("Süre [", "Time [") + xUnit + "]";
+        viewT0 = t0; viewT1 = t1;
         area.AxisX.Minimum = t0 / div;
         area.AxisX.Maximum = t1 / div;
 
@@ -1122,6 +1147,52 @@ class MainForm : Form
             }
         area.RecalculateAxesScale();
         UpdateHover();
+    }
+
+    // Fare tekerlegi: zaman ekseninde yakinlastirir; Ctrl ile birlikte deger ekseninde. Cift tik ikisini de sifirlar.
+    void ChartWheel(MouseEventArgs e)
+    {
+        ChartArea a = chart.ChartAreas[0];
+        double k = e.Delta > 0 ? 0.6 : 1 / 0.6;
+        try
+        {
+            if ((ModifierKeys & Keys.Control) != 0)
+            {
+                double lo = a.AxisY.Minimum / lastK, hi = a.AxisY.Maximum / lastK;
+                if (double.IsNaN(lo) || double.IsNaN(hi) || hi <= lo) return;
+                double c = Math.Max(lo, Math.Min(hi, a.AxisY.PixelPositionToValue(e.Y) / lastK));
+                yLo = c - (c - lo) * k; yHi = c + (hi - c) * k;
+            }
+            else
+            {
+                double x0 = viewT0, x1 = viewT1; // eksenden okumak yerine son cizilen aralik: cizim bitmeden de dogru
+                if (double.IsNaN(x0) || double.IsNaN(x1) || x1 <= x0) return;
+                double w = Math.Max(2, Math.Min((x1 - x0) * k, WindowSecs[WindowSecs.Length - 1]));
+                // Canli izlenirken en yeni veri gorunur kalir; gecmise bakilirken fare altindaki an yerinde kalir
+                if (!follow)
+                {
+                    double c = Math.Max(x0, Math.Min(x1, a.AxisX.PixelPositionToValue(e.X) * chartDiv));
+                    pendingStart = c - (c - x0) * (w / (x1 - x0));
+                }
+                zoomWin = w;
+            }
+        }
+        catch (Exception) { return; } // grafik henuz cizilmedi
+        RefreshUi();
+    }
+
+    void ResetZoom()
+    {
+        zoomWin = 0; yLo = yHi = double.NaN; pendingStart = double.NaN; follow = true;
+        RefreshUi();
+    }
+
+    // Yazi kutusunda yazarken fare grafigin ustunden gecerse odagi calma
+    void FocusChart()
+    {
+        Control c = ActiveControl;
+        while (c is ContainerControl && ((ContainerControl)c).ActiveControl != null) c = ((ContainerControl)c).ActiveControl;
+        if (!(c is TextBoxBase)) chart.Focus();
     }
 
     // Farenin altindaki anin degerini grafigin uzerinde gosterir; canli veri akarken her yenilemede guncellenir
@@ -1285,6 +1356,14 @@ class MainForm : Form
                 t.Stop();
                 if (mode == "scroll") scroll.Value = 0; // gecmisin basina kaydir
                 if (mode == "hover") { hoverPt = new Point(chart.Width / 3, chart.Height / 2); hovering = true; }
+                if (mode == "zoom")
+                {
+                    // tekerlek olaylarini taklit et: 3 kez zamanda, 2 kez (Ctrl yerine dogrudan) degerde yakinlastir
+                    for (int z = 0; z < 3; z++) ChartWheel(new MouseEventArgs(MouseButtons.None, 0, chart.Width / 2, chart.Height / 2, 120));
+                    ChartArea za = chart.ChartAreas[0];
+                    double zl = za.AxisY.Minimum / lastK, zh = za.AxisY.Maximum / lastK, zc = (zl + zh) / 2;
+                    yLo = zc - (zc - zl) * 0.36; yHi = zc + (zh - zc) * 0.36;
+                }
                 if (mode == "stop") { StopMeasure(); Application.DoEvents(); Thread.Sleep(600); Application.DoEvents(); } // durdurduktan sonraki olay listesi
                 if (mode == "clear") { testNoAsk = true; ClearChart(); Application.DoEvents(); Thread.Sleep(1200); Application.DoEvents(); }
                 RefreshUi();

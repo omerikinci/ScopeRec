@@ -233,6 +233,7 @@ class ViewerForm : Form
     Recording rec;
     List<Ev> fileEvents = new List<Ev>(), gapEvents = new List<Ev>(), calcEvents = new List<Ev>(), shown = new List<Ev>();
     double viewStart, viewEnd; // saniye
+    double yLo = double.NaN, yHi = double.NaN; // Ctrl+tekerlekle secilen sol eksen araligi; NaN = otomatik
     bool updating;
 
     Chart chart;
@@ -326,6 +327,21 @@ class ViewerForm : Form
             double c = CursorSeconds(e.X);
             if (double.IsNaN(c)) c = (viewStart + viewEnd) / 2;
             double k = e.Delta > 0 ? 0.6 : 1 / 0.6;
+            if ((ModifierKeys & Keys.Control) != 0)
+            {
+                // Ctrl + tekerlek: deger ekseninde (sol eksen) yakinlastir
+                Axis ay = chart.ChartAreas[0].AxisY;
+                try
+                {
+                    double lo = ay.Minimum, hi = ay.Maximum;
+                    if (double.IsNaN(lo) || double.IsNaN(hi) || hi <= lo) return;
+                    double cy = Math.Max(lo, Math.Min(hi, ay.PixelPositionToValue(e.Y)));
+                    yLo = cy - (cy - lo) * k; yHi = cy + (hi - cy) * k;
+                }
+                catch (Exception) { return; }
+                Redraw();
+                return;
+            }
             SetView(c - (c - viewStart) * k, c + (viewEnd - c) * k);
         };
         chart.MouseEnter += delegate { if (rec != null) chart.Focus(); };
@@ -366,7 +382,7 @@ class ViewerForm : Form
         gCols.Text = Ui.S("Gösterilecek seriler", "Series to show"); gCols.SetBounds(6, 6, 234, 190);
         lstCols = new CheckedListBox();
         lstCols.CheckOnClick = true; lstCols.IntegralHeight = false; lstCols.SetBounds(8, 22, 218, 160);
-        lstCols.ItemCheck += delegate { BeginInvoke(new MethodInvoker(Redraw)); };
+        lstCols.ItemCheck += delegate { yLo = yHi = double.NaN; BeginInvoke(new MethodInvoker(Redraw)); };
         gCols.Controls.Add(lstCols);
 
         GroupBox gLim = new ThemedGroup();
@@ -405,8 +421,8 @@ class ViewerForm : Form
         btnAll.Click += delegate { ShowAll(); };
         lblFiles = new Label();
         lblFiles.SetBounds(470, 6, 700, 40); lblFiles.Anchor = AnchorStyles.Left | AnchorStyles.Top;
-        lblFiles.Text = Ui.S("Fare tekerleği: yakınlaştır  ·  sürükle: aralık seç  ·  çift tık: tümü  ·  olaya tıkla: oraya git",
-                             "Mouse wheel: zoom  ·  drag: select range  ·  double click: all  ·  click an event: go there");
+        lblFiles.Text = Ui.S("Tekerlek: zamanda yakınlaştır  ·  Ctrl+tekerlek: değerde yakınlaştır  ·  sürükle: aralık seç\nçift tık: tümünü göster  ·  olaya tıkla: oraya git",
+                             "Wheel: zoom time  ·  Ctrl+wheel: zoom values  ·  drag: select range\ndouble click: show all  ·  click an event: go there");
         Label lAxis = new Label();
         lAxis.Text = Ui.S("Zaman ekseni:", "Time axis:"); lAxis.SetBounds(248, 17, 84, 20);
         cmbAxis = new ComboBox(); cmbAxis.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -676,7 +692,7 @@ class ViewerForm : Form
 
     // ---------------------------------------------------------------- gorunum
 
-    void ShowAll() { if (rec != null) SetView(T0, T1); }
+    void ShowAll() { yLo = yHi = double.NaN; if (rec != null) SetView(T0, T1); }
 
     // Olaya git: olayin cevresini, suresinin birkac kati genislikte goster
     void GoTo(Ev e)
@@ -738,6 +754,8 @@ class ViewerForm : Form
         }
         area.AxisY.Title = unit1 == null ? "" : "[" + unit1 + "]";
         area.AxisY2.Enabled = unit2 != null ? AxisEnabled.True : AxisEnabled.False;
+        area.AxisY.Minimum = double.IsNaN(yLo) ? double.NaN : yLo;
+        area.AxisY.Maximum = double.IsNaN(yLo) ? double.NaN : yHi;
         area.AxisY2.Title = unit2 == null ? "" : "[" + unit2 + "]";
         area.AxisX.Minimum = ToX(viewStart); area.AxisX.Maximum = ToX(viewEnd);
         // Etiket araligi: yuvarlak bir adim; saat modunda saat baslarina, sure modunda kayit basina hizali
@@ -848,6 +866,7 @@ class ViewerForm : Form
 
     // --selftest <png> <dosyalar...> [--limit seri alt ust] [--event n]: dosyalari acar, pencere goruntusunu kaydedip kapanir (gelistirme icin)
     public bool TestClock; // --clock: zaman eksenini saat moduna alir
+    public bool TestZoomY; // --zoomy: deger ekseninde yakinlastirilmis gorunum
     public void SelfTest(string png, List<string> files, string[] limit, int eventIndex)
     {
         Shown += delegate
@@ -860,6 +879,7 @@ class ViewerForm : Form
             }
             if (TestClock) cmbAxis.SelectedIndex = 1;
             if (eventIndex >= 0 && eventIndex < lvEvents.Items.Count) lvEvents.Items[eventIndex].Selected = true;
+            if (TestZoomY) { Axis zy = chart.ChartAreas[0].AxisY; chart.Update(); double zl = zy.Minimum, zh = zy.Maximum; yLo = 0.45; yHi = 0.55; Redraw(); }
             System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
             t.Interval = 1500;
             t.Tick += delegate
@@ -897,6 +917,7 @@ static class ViewerProgram
                 if (args[i] == "--limit" && i + 3 < args.Length) { limit = new string[] { args[i + 1], args[i + 2], args[i + 3] }; i += 3; }
                 else if (args[i] == "--event" && i + 1 < args.Length) ev = int.Parse(args[++i]);
                 else if (args[i] == "--clock") f.TestClock = true;
+                else if (args[i] == "--zoomy") f.TestZoomY = true;
                 else files.Add(args[i]);
             }
             f.SelfTest(args[1], files, limit, ev);

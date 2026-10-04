@@ -26,13 +26,14 @@ Yeni bir marka eklemek için `cihaz.cs` içindeki `Dialect` sınıfına bir komu
 - Osiloskop ekran görüntüsü alma (yalnızca Siglent)
 - Türkçe / İngilizce arayüz ve açık / koyu tema (üst çubuktaki listelerden)
 - Grafiği temizleme (onay sorar; CSV kayıtlarına dokunmaz) ve tüm ayarları varsayılana döndürme
+- Grafikte fare tekerleğiyle zamanda, Ctrl+tekerlekle değer ekseninde yakınlaştırma; çift tık sıfırlar. Fare altındaki anın değeri imlecin yanında görünür
 
 ## Kayıt görüntüleyici (ScopeView)
 
 `ScopeView.exe` önceden alınmış kayıtları inceler. Ölçüm dosyasını (`olcum_….csv`) ve log dosyasını (`…_log.txt` ya da `…_olaylar.csv`)
 pencereye sürükleyip bırakın; yalnızca ölçüm dosyası bırakılırsa yanındaki log kendiliğinden açılır.
 
-- Tüm kaydın grafiği; fare tekerleğiyle yakınlaştırma, sürükleyerek aralık seçme, alttaki çubukla gezme
+- Tüm kaydın grafiği; fare tekerleğiyle zamanda, Ctrl+tekerlekle değer ekseninde yakınlaştırma, sürükleyerek aralık seçme, alttaki çubukla gezme
 - Olay listesi: limit dışı aralıklar, iletişim hataları, bağlantı kopmaları, veri kesintileri; olaya tıklayınca grafik oraya gider
 - Limit dışı aralıklar grafikte kırmızı şeritle gösterilir
 - Limit analizi: logu olmayan eski kayıtlarda da alt/üst limit girip limit dışı aralıkları bulur
