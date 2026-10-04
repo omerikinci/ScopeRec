@@ -101,7 +101,7 @@ class MainForm : Form
     string IniPath { get { return Path.Combine(baseDir, "ayarlar.ini"); } }
 
     // arayuz
-    Button btnStart, btnFolder, btnShot, btnReset;
+    Button btnStart, btnFolder, btnShot, btnReset, btnDefaults;
     CheckBox chkRecord, chkAlarm, chkBeep;
     CheckBox[] chkChan = new CheckBox[4];
     CheckedListBox lstParams;
@@ -187,6 +187,10 @@ class MainForm : Form
             Ui.S("6 saat", "6 hours"), Ui.S("12 saat", "12 hours"), Ui.S("1 gün", "1 day"), Ui.S("3 gün", "3 days") });
         cmbWindow.SelectedIndex = 1;
         bar.Controls.Add(cmbWindow);
+        Button btnClear = new Button();
+        btnClear.Text = Ui.S("Grafiği temizle", "Clear chart"); btnClear.Size = new Size(120, 25); btnClear.Margin = new Padding(12, 2, 0, 0);
+        btnClear.Click += delegate { ClearChart(); };
+        bar.Controls.Add(btnClear);
         lblHistory = MakeLabel(Ui.S("◀ Geçmişe bakılıyor – canlı veri için çubuğu en sağa çekin", "◀ Viewing history – drag the bar fully right for live data"), 6);
         lblHistory.ForeColor = Ui.Th.Bad; lblHistory.Visible = false;
         bar.Controls.Add(lblHistory);
@@ -282,6 +286,11 @@ class MainForm : Form
         chkBeep.SetBounds(12, 142, 210, 22);
         gAl.Controls.AddRange(new Control[] { chkAlarm, cmbAlarmCh, cmbAlarmParam, lblLow, txtLow, lblHigh, txtHigh, chkBeep });
 
+        btnDefaults = new Button();
+        btnDefaults.Text = Ui.S("Varsayılan ayarlara dön", "Restore default settings"); btnDefaults.SetBounds(6, y, 234, 28);
+        btnDefaults.Click += delegate { ResetDefaults(); };
+        left.Controls.Add(btnDefaults);
+
 
 
         // ust cubuk
@@ -337,7 +346,7 @@ class MainForm : Form
         List<Control> locks = new List<Control>();
         foreach (GroupBox g in new GroupBox[] { gConn, gCh, gPar, gInt, gAl })
             foreach (Control c in g.Controls) if (!(c is Label)) locks.Add(c);
-        locks.Add(cmbLang); locks.Add(cmbTheme);
+        locks.Add(cmbLang); locks.Add(cmbTheme); locks.Add(btnDefaults);
         lockWhileRunning = locks.ToArray();
         ApplyTheme();
     }
@@ -430,10 +439,41 @@ class MainForm : Form
     }
 
     // Dil ya da tema degisince arayuzu bastan kurar; olcum verisi ve olay listesi korunur
-    void Rebuild()
+    bool testNoAsk; // --selftest: onay pencereleri atlanir
+
+    // Evet / Hayir onayi; varsayilan dugme Hayir
+    bool Confirm(string question)
+    {
+        return testNoAsk || MessageBox.Show(this, question, Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+    }
+
+    // Grafikte ve bellekte biriken olcum gecmisini siler; CSV kaydina dokunmaz, olcum suruyorsa devam eder
+    void ClearChart()
+    {
+        if (!Confirm(Ui.S("Tüm grafik silinecektir. Devam edilsin mi?\n\n(CSV dosyasına yazılmış kayıtlar silinmez.)",
+                          "The whole chart will be cleared. Continue?\n\n(Recordings already written to CSV are not deleted.)"))) return;
+        lock (lk) { foreach (SeriesData s in series) { s.T.Clear(); s.V.Clear(); s.ResetStats(); } }
+        follow = true;
+    }
+
+    // Tum ayarlari ilk kurulumdaki haline getirir (dil ayni kalir)
+    void ResetDefaults()
     {
         if (running) return;
+        if (!Confirm(Ui.S("Tüm ayarlar varsayılan değerlere dönecek (kanal, parametre, limitler, bağlantı, tema). Devam edilsin mi?",
+                          "All settings will return to their defaults (channels, parameters, limits, connection, theme). Continue?"))) return;
+        Ui.Th = Theme.Light();
+        try { File.Delete(IniPath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        Rebuild(false);
         SaveSettings();
+    }
+
+    void Rebuild() { Rebuild(true); }
+
+    void Rebuild(bool keepSettings)
+    {
+        if (running) return;
+        if (keepSettings) SaveSettings();
         object[] log = new object[lstLog.Items.Count];
         lstLog.Items.CopyTo(log, 0);
         SuspendLayout();
@@ -822,6 +862,7 @@ class MainForm : Form
         {
             using (ILink u = OpenLink(c))
             {
+                if (u == null && running) return false; // cihaz olcum is parcaciginda acik; durum yazisini bozma
                 if (u == null) { connected = false; deviceText = Ui.S("Osiloskop bulunamadı (bağlı mı, başka program kullanıyor mu?)", "Oscilloscope not found (is it connected, is another program using it?)"); return false; }
                 u.Clear(); u.SetTimeout(3000);
                 string idn = u.QueryText("*IDN?");
@@ -1084,6 +1125,7 @@ class MainForm : Form
     {
         Shown += delegate
         {
+            if (mode == "defaults") { testNoAsk = true; ResetDefaults(); }
             if (mode == "toggle") { cmbLang.SelectedIndex = 1 - cmbLang.SelectedIndex; Application.DoEvents(); cmbTheme.SelectedIndex = 1 - cmbTheme.SelectedIndex; Application.DoEvents(); }
             StartMeasure();
             System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
@@ -1092,6 +1134,7 @@ class MainForm : Form
             {
                 t.Stop();
                 if (mode == "scroll") scroll.Value = 0; // gecmisin basina kaydir
+                if (mode == "clear") { testNoAsk = true; ClearChart(); Application.DoEvents(); Thread.Sleep(1200); Application.DoEvents(); }
                 RefreshUi();
                 // Ekrandaki gercek pikseller (yalnizca bu pencerenin alani); DrawToBitmap ozel cizimleri yanlis gosteriyor
                 TopMost = true; Activate(); Refresh(); Application.DoEvents(); Thread.Sleep(300); Application.DoEvents();

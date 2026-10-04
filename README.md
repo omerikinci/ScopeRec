@@ -25,6 +25,7 @@ Yeni bir marka eklemek için `cihaz.cs` içindeki `Dialect` sınıfına bir komu
 - CSV kaydı (`kayitlar` klasörüne; bilgisayarın bölge ayarıyla yazılır, Excel'de doğrudan açılır)
 - Osiloskop ekran görüntüsü alma (yalnızca Siglent)
 - Türkçe / İngilizce arayüz ve açık / koyu tema (üst çubuktaki listelerden)
+- Grafiği temizleme (onay sorar; CSV kayıtlarına dokunmaz) ve tüm ayarları varsayılana döndürme
 
 ## Kayıt görüntüleyici (ScopeView)
 
