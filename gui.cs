@@ -1,4 +1,4 @@
-// OsiloTakip.exe - pencereli olcum uygulamasi. Derleme icin: derle.bat
+// ScopeRec.exe - pencereli olcum uygulamasi. Derleme icin: derle.bat
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -138,7 +138,7 @@ class MainForm : Form
 
     public MainForm()
     {
-        Text = "OsiloTakip";
+        Text = "ScopeRec";
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
         Font = new Font("Segoe UI", 9f);
         ClientSize = new Size(1180, 760);
@@ -515,7 +515,7 @@ class MainForm : Form
     static string Span(double sec) { return Fmt.Span(sec); }
 
     // Kayit acikken olay listesindeki her satir <kayit>_log.txt dosyasina da yazilir (zaman, t[s], mesaj; sekmeyle ayrik).
-    // OsiloKayit bu dosyayi olcum dosyasiyla birlikte acip olaylari grafikte gosterir.
+    // ScopeView bu dosyayi olcum dosyasiyla birlikte acip olaylari grafikte gosterir.
     StreamWriter logFile;
     Stopwatch runClock;
 

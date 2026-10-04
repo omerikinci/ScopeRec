@@ -1,4 +1,4 @@
-// OsiloKayit.exe - onceden alinmis olcum kayitlarini ve loglarini goruntuleme araci. Derleme icin: derle.bat
+// ScopeView.exe - onceden alinmis olcum kayitlarini ve loglarini goruntuleme araci. Derleme icin: derle.bat
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -250,7 +250,7 @@ class ViewerForm : Form
     public ViewerForm()
     {
         LoadPrefs();
-        Text = Ui.S("OsiloKayıt – kayıt görüntüleyici", "OsiloKayit – recording viewer");
+        Text = Ui.S("ScopeView – kayıt görüntüleyici", "ScopeView – recording viewer");
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
         Font = new Font("Segoe UI", 9f);
         ClientSize = new Size(1180, 760);
@@ -264,7 +264,7 @@ class ViewerForm : Form
         ShowData();
     }
 
-    // Dil ve tema OsiloTakip'in ayar dosyasindan alinir
+    // Dil ve tema ScopeRec'in ayar dosyasindan alinir
     void LoadPrefs()
     {
         Ui.En = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName != "tr";
@@ -539,7 +539,7 @@ class ViewerForm : Form
         {
             string names = Path.GetFileName(rec.Path);
             foreach (string l in logs) names += "   +   " + Path.GetFileName(l);
-            Text = "OsiloKayıt – " + names;
+            Text = "ScopeView – " + names;
         }
     }
 

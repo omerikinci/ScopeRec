@@ -1,4 +1,4 @@
-# OsiloTakip
+# ScopeRec
 
 Osiloskoptan USB ya da ağ üzerinden sürekli ölçüm okuyan Windows uygulaması.
 Osiloskopla WinUSB sürücüsü üzerinden doğrudan konuşur; NI-VISA ya da USBTMC sürücüsü gerekmez.
@@ -17,7 +17,7 @@ Yeni bir marka eklemek için `cihaz.cs` içindeki `Dialect` sınıfına bir komu
 
 ## Kullanım
 
-`OsiloTakip.exe` dosyasını çalıştırın, soldan kanal ve parametreleri seçip **Başlat**'a basın.
+`ScopeRec.exe` dosyasını çalıştırın, soldan kanal ve parametreleri seçip **Başlat**'a basın.
 
 - Kanal (C1–C4) ve ölçüm seçimi: RMS, ortalama (DC), tepe-tepe, frekans, periyot vb.
 - Canlı değer kutuları (min / maks / ortalama) ve canlı grafik (30 sn – 3 gün arası zaman aralığı; veri pencereden uzunsa alttaki çubukla geçmişte gezilir)
@@ -26,9 +26,9 @@ Yeni bir marka eklemek için `cihaz.cs` içindeki `Dialect` sınıfına bir komu
 - Osiloskop ekran görüntüsü alma (yalnızca Siglent)
 - Türkçe / İngilizce arayüz ve açık / koyu tema (üst çubuktaki listelerden)
 
-## Kayıt görüntüleyici (OsiloKayıt)
+## Kayıt görüntüleyici (ScopeView)
 
-`OsiloKayit.exe` önceden alınmış kayıtları inceler. Ölçüm dosyasını (`olcum_….csv`) ve log dosyasını (`…_log.txt` ya da `…_olaylar.csv`)
+`ScopeView.exe` önceden alınmış kayıtları inceler. Ölçüm dosyasını (`olcum_….csv`) ve log dosyasını (`…_log.txt` ya da `…_olaylar.csv`)
 pencereye sürükleyip bırakın; yalnızca ölçüm dosyası bırakılırsa yanındaki log kendiliğinden açılır.
 
 - Tüm kaydın grafiği; fare tekerleğiyle yakınlaştırma, sürükleyerek aralık seçme, alttaki çubukla gezme
@@ -38,7 +38,7 @@ pencereye sürükleyip bırakın; yalnızca ölçüm dosyası bırakılırsa yan
 - Zaman ekseni kaydın kendi süresini gösterir (00:00:00 kaydın başı); üstteki listeden gerçek saate çevrilebilir
 - Fare altındaki anın kayıt süresi, saati ve değerleri durum çubuğunda
 
-OsiloTakip kayıt sırasında `…_log.txt` dosyasını da yazar (zaman, t, mesaj; sekmeyle ayrık).
+ScopeRec kayıt sırasında `…_log.txt` dosyasını da yazar (zaman, t, mesaj; sekmeyle ayrık).
 
 ## Gereksinimler
 
@@ -68,8 +68,8 @@ sds.exe --tcp 5025              TCP köprüsü
 | `usb.cs` | WinUSB üzerinden USBTMC çerçevelemesi (ortak) |
 | `cihaz.cs` | Bağlantı arayüzü, ağ bağlantısı ve marka bazlı komut setleri |
 | `ortak.cs` | Dil, tema ve sayı biçimlendirme (iki uygulama için ortak) |
-| `gui.cs` | OsiloTakip: ölçüm uygulaması |
-| `kayit.cs` | OsiloKayıt: kayıt görüntüleyici |
+| `gui.cs` | ScopeRec: ölçüm uygulaması |
+| `kayit.cs` | ScopeView: kayıt görüntüleyici |
 | `sds.cs` | Komut satırı aracı |
 
 ## Not

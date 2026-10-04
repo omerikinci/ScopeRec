@@ -1,4 +1,4 @@
-// Iki uygulamanin (OsiloTakip, OsiloKayit) ortak kullandigi dil, tema ve sayi bicimlendirme kodu.
+// Iki uygulamanin (ScopeRec, ScopeView) ortak kullandigi dil, tema ve sayi bicimlendirme kodu.
 using System;
 using System.Drawing;
 using System.Globalization;
