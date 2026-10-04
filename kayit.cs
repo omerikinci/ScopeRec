@@ -35,6 +35,7 @@ class Recording
     public List<Column> Cols = new List<Column>();
     public DateTime Start;        // t = 0 anina karsilik gelen saat
     public bool HasClock;
+    public double Offset;         // dosyadaki ilk t degeri; kayit suresi bundan sayilir (olay dosyalarindaki t ayni saatle yazilmis)
 
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
@@ -96,10 +97,11 @@ class Recording
                 {
                     DateTime d;
                     // saat sutunu saniyeye yuvarlanmis yaziliyor; ortalama yarim saniyelik kaymayi duzelt
-                    if (Clock(f[0], out d)) { r.Start = d.AddSeconds(0.5 - tv); r.HasClock = true; }
+                    if (Clock(f[0], out d)) { r.Start = d.AddSeconds(0.5); r.HasClock = true; }
+                    r.Offset = tv;
                     first = false;
                 }
-                t.Add(tv);
+                t.Add(tv - r.Offset); // kayit suresi kaydin ilk satirindan baslar
                 for (int i = 0; i < cols.Count; i++) cols[i].Add(i + 2 < f.Length ? Num(f[i + 2], sep) : double.NaN);
             }
         }
@@ -237,7 +239,7 @@ class ViewerForm : Form
     HScrollBar scroll;
     CheckedListBox lstCols;
     ListView lvEvents, lvStats;
-    ComboBox cmbLimit;
+    ComboBox cmbLimit, cmbAxis;
     TextBox txtLow, txtHigh;
     Label lblHint, lblFiles, lblSummary, lblLow, lblHigh;
     Panel topBar;
@@ -291,16 +293,20 @@ class ViewerForm : Form
         chart = new Chart();
         chart.Dock = DockStyle.Fill;
         ChartArea a = new ChartArea("a");
-        a.AxisX.LabelStyle.Format = "HH:mm:ss";
+        // X ekseni saniye cinsinden kayit suresi; etiketler FormatNumber olayinda sure ya da saat olarak yazilir
         a.AxisX.ScaleView.Zoomable = false;         // yakinlastirmayi kendimiz yonetiyoruz (gorunen aralik yeniden orneklenir)
         a.CursorX.IsUserEnabled = true; a.CursorX.IsUserSelectionEnabled = true;
-        a.CursorX.IntervalType = DateTimeIntervalType.Milliseconds; a.CursorX.Interval = 1;
+        a.CursorX.Interval = 0;
         a.AxisY.IsStartedFromZero = false; a.AxisY2.IsStartedFromZero = false;
         a.AxisY.LabelStyle.Format = "0.###"; a.AxisY2.LabelStyle.Format = "0.###";
         a.AxisY2.MajorGrid.Enabled = false;
         chart.ChartAreas.Add(a);
         Legend lg = new Legend("l"); lg.Docking = Docking.Top;
         chart.Legends.Add(lg);
+        chart.FormatNumber += delegate(object s, FormatNumberEventArgs e)
+        {
+            if (rec != null && e.ElementType == ChartElementType.AxisLabels && s == chart.ChartAreas[0].AxisX) e.LocalizedValue = AxisLabel(e.Value);
+        };
         chart.SelectionRangeChanged += delegate(object s, CursorEventArgs e)
         {
             if (rec == null || double.IsNaN(e.NewSelectionStart) || double.IsNaN(e.NewSelectionEnd)) return;
@@ -337,8 +343,8 @@ class ViewerForm : Form
         bottom.Dock = DockStyle.Fill; bottom.ColumnCount = 2; bottom.RowCount = 1;
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
-        lvEvents = MakeList(new string[] { Ui.S("Saat", "Clock"), "t", Ui.S("Olay", "Event"), Ui.S("Değer", "Value"), Ui.S("Süre", "Duration"), Ui.S("Kaynak", "Source") },
-                            new int[] { 125, 62, 215, 80, 66, 84 });
+        lvEvents = MakeList(new string[] { Ui.S("Kayıt süresi", "Elapsed"), Ui.S("Saat", "Clock"), Ui.S("Olay", "Event"), Ui.S("Değer", "Value"), Ui.S("Olay süresi", "Duration"), Ui.S("Kaynak", "Source") },
+                            new int[] { 82, 125, 200, 76, 76, 84 });
         lvEvents.SelectedIndexChanged += delegate { if (lvEvents.SelectedIndices.Count > 0) GoTo(shown[lvEvents.SelectedIndices[0]]); };
         lvStats = MakeList(new string[] { Ui.S("Seri", "Series"), "Min", Ui.S("Maks", "Max"), Ui.S("Ortalama", "Mean") }, new int[] { 110, 90, 90, 90 });
         bottom.Controls.Add(lvEvents, 0, 0);
@@ -390,10 +396,16 @@ class ViewerForm : Form
         btnAll.Text = Ui.S("Tümünü göster", "Show all"); btnAll.SetBounds(126, 10, 110, 30);
         btnAll.Click += delegate { ShowAll(); };
         lblFiles = new Label();
-        lblFiles.SetBounds(250, 6, 900, 40); lblFiles.Anchor = AnchorStyles.Left | AnchorStyles.Top;
+        lblFiles.SetBounds(470, 6, 700, 40); lblFiles.Anchor = AnchorStyles.Left | AnchorStyles.Top;
         lblFiles.Text = Ui.S("Fare tekerleği: yakınlaştır  ·  sürükle: aralık seç  ·  çift tık: tümü  ·  olaya tıkla: oraya git",
                              "Mouse wheel: zoom  ·  drag: select range  ·  double click: all  ·  click an event: go there");
-        topBar.Controls.AddRange(new Control[] { btnOpen, btnAll, lblFiles });
+        Label lAxis = new Label();
+        lAxis.Text = Ui.S("Zaman ekseni:", "Time axis:"); lAxis.SetBounds(248, 17, 84, 20);
+        cmbAxis = new ComboBox(); cmbAxis.DropDownStyle = ComboBoxStyle.DropDownList;
+        cmbAxis.Items.AddRange(new object[] { Ui.S("Kayıt süresi", "Elapsed time"), Ui.S("Saat", "Clock time") });
+        cmbAxis.SelectedIndex = 0; cmbAxis.SetBounds(334, 13, 120, 24);
+        cmbAxis.SelectedIndexChanged += delegate { Redraw(); };
+        topBar.Controls.AddRange(new Control[] { btnOpen, btnAll, lAxis, cmbAxis, lblFiles });
 
         status = new StatusStrip();
         stCursor = new ToolStripStatusLabel(""); stCursor.Spring = true; stCursor.TextAlign = ContentAlignment.MiddleLeft;
@@ -512,7 +524,7 @@ class ViewerForm : Form
             foreach (string l in logs)
             {
                 if (rec == null) { problems.Add(Ui.S("Önce ölçüm dosyasını (olcum_….csv) bırakın", "Drop the measurement file (olcum_….csv) first")); break; }
-                fileEvents.AddRange(EventFile.Load(l));
+                foreach (Ev e in EventFile.Load(l)) { e.T -= rec.Offset; fileEvents.Add(e); } // olay zamanlarini kayit suresine cevir
             }
             // Kayit bittiginde hala limit disinda kalan olay: sonuna kadar surmus say
             if (rec != null)
@@ -533,8 +545,8 @@ class ViewerForm : Form
 
     double T0 { get { return rec.T.Length > 0 ? rec.T[0] : 0; } }
     double T1 { get { return rec.T.Length > 0 ? rec.T[rec.T.Length - 1] : 1; } }
-    double ToX(double sec) { return rec.Start.AddSeconds(sec).ToOADate(); }
-    double ToSec(double x) { return (DateTime.FromOADate(x) - rec.Start).TotalSeconds; }
+    double ToX(double sec) { return sec; }
+    double ToSec(double x) { return x; }
 
     void ShowData()
     {
@@ -591,6 +603,28 @@ class ViewerForm : Form
         Redraw();
     }
 
+    bool ClockAxis { get { return cmbAxis.SelectedIndex == 1 && rec != null && rec.HasClock; } }
+    double axisStep = 1;
+
+    static double NiceStep(double raw)
+    {
+        double[] steps = { 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400 };
+        foreach (double s in steps) if (s >= raw) return s;
+        return Math.Ceiling(raw / 86400) * 86400;
+    }
+
+    // Eksen etiketi: kayit suresi (saat:dakika:saniye, saat 24'u asabilir) ya da gercek saat
+    string AxisLabel(double sec)
+    {
+        if (ClockAxis)
+        {
+            DateTime d = rec.Start.AddSeconds(sec);
+            return d.ToString(axisStep < 1 ? "HH:mm:ss.f" : T1 - T0 > 86400 ? "dd.MM HH:mm" : "HH:mm:ss");
+        }
+        if (axisStep < 1) { TimeSpan t = TimeSpan.FromSeconds(Math.Round(sec, 1)); return string.Format(Cur, "{0:00}:{1:00}:{2:00.0}", (int)t.TotalHours, t.Minutes, t.Seconds + t.Milliseconds / 1000.0); }
+        return Fmt.Span(Math.Round(sec));
+    }
+
     static string Dur(double sec)
     {
         if (double.IsNaN(sec)) return "";
@@ -612,8 +646,8 @@ class ViewerForm : Form
         lvEvents.Items.Clear();
         foreach (Ev e in shown)
         {
-            ListViewItem it = new ListViewItem(rec != null ? ClockText(e.T) : "");
-            it.SubItems.Add(Fmt.Span(e.T));
+            ListViewItem it = new ListViewItem(Fmt.Span(e.T));
+            it.SubItems.Add(rec != null ? ClockText(e.T) : "");
             it.SubItems.Add(e.Text);
             it.SubItems.Add(e.Value);
             it.SubItems.Add(Dur(e.Dur));
@@ -686,7 +720,7 @@ class ViewerForm : Form
             else if (c.Unit != unit1 && unit2 == null) unit2 = c.Unit;
             if (c.Unit != unit1 && c.Unit != unit2) { skipped.Add(c.Name); continue; }
             Series s = new Series(c.Name);
-            s.ChartType = SeriesChartType.Line; s.BorderWidth = 2; s.XValueType = ChartValueType.DateTime;
+            s.ChartType = SeriesChartType.Line; s.BorderWidth = 2; s.XValueType = ChartValueType.Double;
             s.YAxisType = c.Unit == unit1 ? AxisType.Primary : AxisType.Secondary;
             s.Color = SeriesColor(c.Name, chart.Series.Count);
             List<double> xs = new List<double>(), ys = new List<double>();
@@ -698,7 +732,15 @@ class ViewerForm : Form
         area.AxisY2.Enabled = unit2 != null ? AxisEnabled.True : AxisEnabled.False;
         area.AxisY2.Title = unit2 == null ? "" : "[" + unit2 + "]";
         area.AxisX.Minimum = ToX(viewStart); area.AxisX.Maximum = ToX(viewEnd);
-        area.AxisX.LabelStyle.Format = viewEnd - viewStart < 20 ? "HH:mm:ss.f" : T1 - T0 > 86400 ? "dd.MM HH:mm" : "HH:mm:ss";
+        // Etiket araligi: yuvarlak bir adim; saat modunda saat baslarina, sure modunda kayit basina hizali
+        double step = NiceStep((viewEnd - viewStart) / 8);
+        double origin = ClockAxis ? rec.Start.TimeOfDay.TotalSeconds : 0;
+        double firstTick = Math.Ceiling((viewStart + origin) / step) * step - origin;
+        area.AxisX.Interval = step; area.AxisX.IntervalOffset = firstTick - viewStart;
+        area.AxisX.MajorGrid.Interval = step; area.AxisX.MajorGrid.IntervalOffset = firstTick - viewStart;
+        area.AxisX.MajorTickMark.Interval = step; area.AxisX.MajorTickMark.IntervalOffset = firstTick - viewStart;
+        area.AxisX.LabelStyle.Interval = step; area.AxisX.LabelStyle.IntervalOffset = firstTick - viewStart;
+        axisStep = step;
 
         // Olaylar: aralik olaylari golgeli serit, anlik olaylar dikey cizgi (yalnizca gorunen aralikta, en fazla 400)
         area.AxisX.StripLines.Clear();
@@ -710,8 +752,8 @@ class ViewerForm : Form
             if (++n > 400) break;
             StripLine sl = new StripLine();
             Color col = KindColor(e.Kind);
-            sl.IntervalOffset = ToX(e.T); // tekrarsiz serit: eksen uzerindeki mutlak konum (OADate, birim gun)
-            sl.StripWidth = d / 86400.0;
+            sl.IntervalOffset = e.T; // tekrarsiz serit: eksen uzerindeki mutlak konum (saniye)
+            sl.StripWidth = d;
             if (d > 0) sl.BackColor = Color.FromArgb(60, col);
             sl.BorderColor = col; sl.BorderWidth = 1; sl.BorderDashStyle = d > 0 ? ChartDashStyle.Solid : ChartDashStyle.Dash;
             area.AxisX.StripLines.Add(sl);
@@ -782,14 +824,15 @@ class ViewerForm : Form
         if (i < 0) i = Math.Min(~i, rec.T.Length - 1);
         if (i > 0 && Math.Abs(rec.T[i - 1] - t) < Math.Abs(rec.T[i] - t)) i--;
         StringBuilder sb = new StringBuilder();
-        sb.Append(rec.HasClock ? rec.Start.AddSeconds(rec.T[i]).ToString("dd.MM.yyyy HH:mm:ss.ff") + "   " : "");
-        sb.Append("t = " + Fmt.Span(rec.T[i]));
+        sb.Append(Ui.S("Kayıt süresi ", "Elapsed ") + Fmt.Span(rec.T[i]));
+        if (rec.HasClock) sb.Append("   (" + rec.Start.AddSeconds(rec.T[i]).ToString("dd.MM.yyyy HH:mm:ss") + ")");
         for (int ci = 0; ci < rec.Cols.Count; ci++)
             if (lstCols.GetItemChecked(ci)) sb.Append("     " + rec.Cols[ci].Name + " = " + Fmt.Eng(rec.Cols[ci].V[i], rec.Cols[ci].Unit));
         stCursor.Text = sb.ToString();
     }
 
     // --selftest <png> <dosyalar...> [--limit seri alt ust] [--event n]: dosyalari acar, pencere goruntusunu kaydedip kapanir (gelistirme icin)
+    public bool TestClock; // --clock: zaman eksenini saat moduna alir
     public void SelfTest(string png, List<string> files, string[] limit, int eventIndex)
     {
         Shown += delegate
@@ -800,6 +843,7 @@ class ViewerForm : Form
                 cmbLimit.SelectedIndex = int.Parse(limit[0]); txtLow.Text = limit[1]; txtHigh.Text = limit[2];
                 Analyze();
             }
+            if (TestClock) cmbAxis.SelectedIndex = 1;
             if (eventIndex >= 0 && eventIndex < lvEvents.Items.Count) lvEvents.Items[eventIndex].Selected = true;
             System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
             t.Interval = 1500;
@@ -836,6 +880,7 @@ static class ViewerProgram
             {
                 if (args[i] == "--limit" && i + 3 < args.Length) { limit = new string[] { args[i + 1], args[i + 2], args[i + 3] }; i += 3; }
                 else if (args[i] == "--event" && i + 1 < args.Length) ev = int.Parse(args[++i]);
+                else if (args[i] == "--clock") f.TestClock = true;
                 else files.Add(args[i]);
             }
             f.SelfTest(args[1], files, limit, ev);

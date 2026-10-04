@@ -35,7 +35,8 @@ pencereye sürükleyip bırakın; yalnızca ölçüm dosyası bırakılırsa yan
 - Olay listesi: limit dışı aralıklar, iletişim hataları, bağlantı kopmaları, veri kesintileri; olaya tıklayınca grafik oraya gider
 - Limit dışı aralıklar grafikte kırmızı şeritle gösterilir
 - Limit analizi: logu olmayan eski kayıtlarda da alt/üst limit girip limit dışı aralıkları bulur
-- Fare altındaki anın saati ve değerleri durum çubuğunda
+- Zaman ekseni kaydın kendi süresini gösterir (00:00:00 kaydın başı); üstteki listeden gerçek saate çevrilebilir
+- Fare altındaki anın kayıt süresi, saati ve değerleri durum çubuğunda
 
 OsiloTakip kayıt sırasında `…_log.txt` dosyasını da yazar (zaman, t, mesaj; sekmeyle ayrık).
 
