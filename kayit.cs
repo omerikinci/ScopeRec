@@ -241,7 +241,8 @@ class ViewerForm : Form
     ListView lvEvents, lvStats;
     ComboBox cmbLimit, cmbAxis;
     TextBox txtLow, txtHigh;
-    Label lblHint, lblFiles, lblSummary, lblLow, lblHigh;
+    Label lblHint, lblFiles, lblSummary, lblLow, lblHigh, lblHover;
+    Point hoverPt;
     Panel topBar;
     StatusStrip status;
     ToolStripStatusLabel stCursor, stView;
@@ -328,13 +329,15 @@ class ViewerForm : Form
             SetView(c - (c - viewStart) * k, c + (viewEnd - c) * k);
         };
         chart.MouseEnter += delegate { if (rec != null) chart.Focus(); };
-        chart.MouseMove += delegate(object s, MouseEventArgs e) { ShowCursor(e.X); };
+        chart.MouseMove += delegate(object s, MouseEventArgs e) { hoverPt = e.Location; ShowCursor(e.X); };
+        chart.MouseLeave += delegate { lblHover.Visible = false; };
         chart.MouseDoubleClick += delegate { ShowAll(); };
         lblHint = new Label();
         lblHint.Dock = DockStyle.Fill; lblHint.TextAlign = ContentAlignment.MiddleCenter;
         lblHint.Font = new Font("Segoe UI", 14f);
         lblHint.Text = Ui.S("Ölçüm kaydını (olcum_….csv) ve log dosyasını (…_log.txt)\nbu pencereye sürükleyip bırakın",
                             "Drag and drop the measurement file (olcum_….csv)\nand the log file (…_log.txt) onto this window");
+        lblHover = HoverTip.Create(chart);
         chartHost.Controls.Add(chart);
         chartHost.Controls.Add(lblHint);
         main.Controls.Add(chartHost, 0, 0);
@@ -824,7 +827,7 @@ class ViewerForm : Form
     {
         if (rec == null || rec.T.Length == 0) return;
         double t = CursorSeconds(pixelX);
-        if (double.IsNaN(t) || t < viewStart || t > viewEnd) { stCursor.Text = ""; return; }
+        if (double.IsNaN(t) || t < viewStart || t > viewEnd) { stCursor.Text = ""; lblHover.Visible = false; return; }
         int i = Array.BinarySearch(rec.T, t);
         if (i < 0) i = Math.Min(~i, rec.T.Length - 1);
         if (i > 0 && Math.Abs(rec.T[i - 1] - t) < Math.Abs(rec.T[i] - t)) i--;
@@ -834,6 +837,13 @@ class ViewerForm : Form
         for (int ci = 0; ci < rec.Cols.Count; ci++)
             if (lstCols.GetItemChecked(ci)) sb.Append("     " + rec.Cols[ci].Name + " = " + Fmt.Eng(rec.Cols[ci].V[i], rec.Cols[ci].Unit));
         stCursor.Text = sb.ToString();
+
+        // ayni bilgi farenin sag ustunde, satir satir
+        StringBuilder tip = new StringBuilder(Fmt.Span(rec.T[i]));
+        if (rec.HasClock) tip.Append("   " + rec.Start.AddSeconds(rec.T[i]).ToString("HH:mm:ss"));
+        for (int ci = 0; ci < rec.Cols.Count; ci++)
+            if (lstCols.GetItemChecked(ci)) tip.Append("\n" + rec.Cols[ci].Name + "  " + Fmt.Eng(rec.Cols[ci].V[i], rec.Cols[ci].Unit));
+        HoverTip.Show(lblHover, tip.ToString(), hoverPt);
     }
 
     // --selftest <png> <dosyalar...> [--limit seri alt ust] [--event n]: dosyalari acar, pencere goruntusunu kaydedip kapanir (gelistirme icin)
@@ -855,6 +865,7 @@ class ViewerForm : Form
             t.Tick += delegate
             {
                 t.Stop();
+                hoverPt = new Point(chart.Width / 2, chart.Height / 2);
                 ShowCursor(chart.Width / 2);
                 TopMost = true; Activate(); Refresh(); Application.DoEvents(); Thread.Sleep(300); Application.DoEvents();
                 using (Bitmap b = new Bitmap(Width, Height))

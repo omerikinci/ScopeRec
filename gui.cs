@@ -120,6 +120,10 @@ class MainForm : Form
     HScrollBar scroll;
     Label lblHistory;
     bool follow = true; // grafik en yeni veriyi izliyor
+    Label lblHover;
+    Point hoverPt;
+    bool hovering;
+    double chartDiv = 1; // zaman ekseninin birimi (saniye / dakika / saat) kac saniye
     static readonly int[] WindowSecs = { 30, 120, 600, 1800, 3600, 6 * 3600, 12 * 3600, 24 * 3600, 3 * 24 * 3600 };
     ListBox lstLog;
     ToolStripStatusLabel stState, stCount, stRate, stTime, stFile, stAlarm;
@@ -213,6 +217,10 @@ class MainForm : Form
         Legend lg = new Legend("l");
         lg.Docking = Docking.Top;
         chart.Legends.Add(lg);
+        lblHover = HoverTip.Create(chart);
+        hovering = false;
+        chart.MouseMove += delegate(object s, MouseEventArgs e) { hoverPt = e.Location; hovering = true; UpdateHover(); };
+        chart.MouseLeave += delegate { hovering = false; lblHover.Visible = false; };
         main.Controls.Add(chart, 0, 2);
 
         scroll = new HScrollBar();
@@ -1026,6 +1034,7 @@ class MainForm : Form
         double win = WindowSeconds();
         // Zaman ekseni birimi pencereye gore: saniye / dakika / saat
         double div = win <= 120 ? 1 : win <= 7200 ? 60 : 3600;
+        chartDiv = div;
         string xUnit = div == 1 ? "s" : div == 60 ? Ui.S("dk", "min") : Ui.S("saat", "h");
         List<string> names = new List<string>();
         List<double[]> xs = new List<double[]>(), ys = new List<double[]>();
@@ -1112,6 +1121,37 @@ class MainForm : Form
                 area.AxisY.StripLines.Add(sl);
             }
         area.RecalculateAxesScale();
+        UpdateHover();
+    }
+
+    // Farenin altindaki anin degerini grafigin uzerinde gosterir; canli veri akarken her yenilemede guncellenir
+    void UpdateHover()
+    {
+        if (!hovering) { lblHover.Visible = false; return; }
+        ChartArea a = chart.ChartAreas[0];
+        double x;
+        try { x = a.AxisX.PixelPositionToValue(hoverPt.X); }
+        catch (Exception) { lblHover.Visible = false; return; } // grafik henuz cizilmedi
+        if (double.IsNaN(a.AxisX.Minimum) || x < a.AxisX.Minimum || x > a.AxisX.Maximum) { lblHover.Visible = false; return; }
+        double t = x * chartDiv;
+        ParamInfo p = (ParamInfo)cmbChart.SelectedItem;
+        StringBuilder sb = new StringBuilder();
+        lock (lk)
+        {
+            foreach (SeriesData s in series)
+            {
+                if (s.P != p || s.T.Count == 0) continue;
+                int i = s.T.BinarySearch(t);
+                if (i < 0) i = Math.Min(~i, s.T.Count - 1);
+                if (i > 0 && Math.Abs(s.T[i - 1] - t) < Math.Abs(s.T[i] - t)) i--;
+                // fare verinin olmadigi bos bolgedeyse (ornegin henuz dolmamis sag taraf) bir sey gosterme
+                if (Math.Abs(s.T[i] - t) > Math.Max(1.0, WindowSeconds() / 100)) continue;
+                if (sb.Length == 0) sb.Append(s.T[i] < 60 ? s.T[i].ToString("0.0", Cur) + " s" : Span(s.T[i]));
+                sb.Append("\n" + s.Ch + "  " + Eng(s.V[i], s.P.Unit));
+            }
+        }
+        if (sb.Length == 0) { lblHover.Visible = false; return; }
+        HoverTip.Show(lblHover, sb.ToString(), hoverPt);
     }
 
     // Cok nokta varsa her dilimin en dusuk ve en yuksek degerini birakir; kisa sureli kopmalar grafikte kaybolmaz
@@ -1244,6 +1284,7 @@ class MainForm : Form
             {
                 t.Stop();
                 if (mode == "scroll") scroll.Value = 0; // gecmisin basina kaydir
+                if (mode == "hover") { hoverPt = new Point(chart.Width / 3, chart.Height / 2); hovering = true; }
                 if (mode == "stop") { StopMeasure(); Application.DoEvents(); Thread.Sleep(600); Application.DoEvents(); } // durdurduktan sonraki olay listesi
                 if (mode == "clear") { testNoAsk = true; ClearChart(); Application.DoEvents(); Thread.Sleep(1200); Application.DoEvents(); }
                 RefreshUi();

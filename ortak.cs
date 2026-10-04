@@ -114,3 +114,29 @@ static class Fmt
         return string.Format("{0:00}:{1:00}:{2:00}", (int)t.TotalHours, t.Minutes, t.Seconds);
     }
 }
+
+// Grafikte farenin sag ustunde o andaki degeri gosteren kucuk kutu
+static class HoverTip
+{
+    public static Label Create(Control host)
+    {
+        Label l = new Label();
+        l.AutoSize = true; l.Visible = false; l.BorderStyle = BorderStyle.FixedSingle; l.Padding = new Padding(4, 3, 4, 3);
+        l.BackColor = Ui.Th.Card; l.ForeColor = Ui.Th.Text;
+        host.Controls.Add(l);
+        l.BringToFront();
+        return l;
+    }
+
+    // Kutuyu farenin sag ustune koyar; kenara tasarsa sola ya da alta alir (farenin altina girmesin diye hep aralikli)
+    public static void Show(Label l, string text, Point mouse)
+    {
+        l.Text = text;
+        Size sz = l.PreferredSize;
+        int x = mouse.X + 14, y = mouse.Y - sz.Height - 10;
+        if (x + sz.Width > l.Parent.Width - 2) x = mouse.X - sz.Width - 14;
+        if (y < 2) y = mouse.Y + 18;
+        l.Location = new Point(x, y);
+        l.Visible = true;
+    }
+}
