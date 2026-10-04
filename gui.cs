@@ -456,13 +456,12 @@ class MainForm : Form
         follow = true;
     }
 
-    // Tum ayarlari ilk kurulumdaki haline getirir (dil ayni kalir)
+    // Tum ayarlari ilk kurulumdaki haline getirir (dil ve tema ayni kalir)
     void ResetDefaults()
     {
         if (running) return;
-        if (!Confirm(Ui.S("Tüm ayarlar varsayılan değerlere dönecek (kanal, parametre, limitler, bağlantı, tema). Devam edilsin mi?",
-                          "All settings will return to their defaults (channels, parameters, limits, connection, theme). Continue?"))) return;
-        Ui.Th = Theme.Light();
+        if (!Confirm(Ui.S("Tüm ayarlar varsayılan değerlere dönecek (kanal, parametre, limitler, bağlantı). Devam edilsin mi?",
+                          "All settings will return to their defaults (channels, parameters, limits, connection). Continue?"))) return;
         try { File.Delete(IniPath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         Rebuild(false);
         SaveSettings();
