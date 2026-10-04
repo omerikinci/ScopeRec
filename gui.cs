@@ -97,7 +97,10 @@ class MainForm : Form
     const int MinInterval = 40;
 
     readonly string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-    string RecDir { get { return Path.Combine(baseDir, "kayitlar"); } }
+    // Kayitlarin yazildigi yer: secilen konum + klasor adi (varsayilan: uygulamanin yanindaki "kayitlar")
+    string recBase = DefaultBase, recName = "kayitlar";
+    static string DefaultBase { get { return AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar); } }
+    string RecDir { get { return Path.Combine(recBase, recName); } }
     string IniPath { get { return Path.Combine(baseDir, "ayarlar.ini"); } }
 
     // arayuz
@@ -175,7 +178,7 @@ class MainForm : Form
         main.Controls.Add(cards, 0, 0);
 
         FlowLayoutPanel bar = new FlowLayoutPanel();
-        bar.Dock = DockStyle.Fill;
+        bar.Dock = DockStyle.Fill; bar.WrapContents = false; // dar pencerede alt satira kayip gorunmez olmasin
         bar.Controls.Add(MakeLabel(Ui.S("Grafik:", "Chart:"), 6));
         cmbChart = MakeCombo(190);
         foreach (ParamInfo p in ParamInfo.All) cmbChart.Items.Add(p);
@@ -191,7 +194,8 @@ class MainForm : Form
         btnClear.Text = Ui.S("Grafiği temizle", "Clear chart"); btnClear.Size = new Size(120, 25); btnClear.Margin = new Padding(12, 2, 0, 0);
         btnClear.Click += delegate { ClearChart(); };
         bar.Controls.Add(btnClear);
-        lblHistory = MakeLabel(Ui.S("◀ Geçmişe bakılıyor – canlı veri için çubuğu en sağa çekin", "◀ Viewing history – drag the bar fully right for live data"), 6);
+        lblHistory = MakeLabel(Ui.S("Geçmiş gösteriliyor – canlı için çubuğu sağa çekin", "Viewing history – drag the bar right for live"), 6);
+        lblHistory.Margin = new Padding(16, 6, 0, 0);
         lblHistory.ForeColor = Ui.Th.Bad; lblHistory.Visible = false;
         bar.Controls.Add(lblHistory);
         main.Controls.Add(bar, 0, 1);
@@ -304,7 +308,7 @@ class MainForm : Form
         chkRecord = new CheckBox(); chkRecord.Text = Ui.S("CSV dosyasına kaydet", "Record to CSV file"); chkRecord.Checked = true;
         chkRecord.SetBounds(176, 19, 160, 22);
         chkRecord.CheckedChanged += delegate { wantRecord = chkRecord.Checked; };
-        btnFolder = MakeButton(Ui.S("Kayıt klasörü", "Records folder"), 340, delegate { Directory.CreateDirectory(RecDir); Process.Start(RecDir); });
+        btnFolder = MakeButton(Ui.S("Kayıt yeri…", "Record to…"), 340, delegate { RecordSettings(); });
         btnShot = MakeButton(Ui.S("Ekran görüntüsü al", "Take screenshot"), 456, delegate { TakeShot(); });
         btnShot.Width = 130;
         btnReset = MakeButton(Ui.S("İstatistiği sıfırla", "Reset statistics"), 592, delegate { lock (lk) { foreach (SeriesData s in series) s.ResetStats(); violations = 0; } });
@@ -439,6 +443,75 @@ class MainForm : Form
     }
 
     // Dil ya da tema degisince arayuzu bastan kurar; olcum verisi ve olay listesi korunur
+    // Kayit yeri penceresi: kayitlarin yazilacagi konum ve klasor adi. Olcum surerken yalnizca klasor acilabilir.
+    void RecordSettings()
+    {
+        using (Form f = new Form())
+        {
+            f.Text = Ui.S("Kayıt yeri", "Recording location");
+            f.Font = Font; f.FormBorderStyle = FormBorderStyle.FixedDialog; f.MaximizeBox = false; f.MinimizeBox = false; f.ShowInTaskbar = false;
+            f.StartPosition = FormStartPosition.CenterParent; f.ClientSize = new Size(520, 196);
+            f.BackColor = Ui.Th.Back; f.ForeColor = Ui.Th.Text;
+
+            Label l1 = new Label(); l1.Text = Ui.S("Konum:", "Location:"); l1.SetBounds(14, 20, 90, 20);
+            TextBox txtBase = new TextBox(); txtBase.Text = recBase; txtBase.SetBounds(108, 17, 300, 24);
+            Button btnBrowse = new Button(); btnBrowse.Text = Ui.S("Gözat…", "Browse…"); btnBrowse.SetBounds(416, 15, 90, 28);
+            Label l2 = new Label(); l2.Text = Ui.S("Klasör adı:", "Folder name:"); l2.SetBounds(14, 56, 90, 20);
+            TextBox txtName = new TextBox(); txtName.Text = recName; txtName.SetBounds(108, 53, 300, 24);
+            // Salt okunur metin kutusu: uzun yollar bosluk olmasa da alt satira kayar
+            TextBox lFull = new TextBox(); lFull.ReadOnly = true; lFull.Multiline = true; lFull.TabStop = false; lFull.SetBounds(14, 88, 492, 52);
+            Button btnOpenDir = new Button(); btnOpenDir.Text = Ui.S("Klasörü aç", "Open folder"); btnOpenDir.SetBounds(14, 150, 110, 30);
+            Button ok = new Button(); ok.Text = Ui.S("Tamam", "OK"); ok.SetBounds(300, 150, 100, 30);
+            Button cancel = new Button(); cancel.Text = Ui.S("İptal", "Cancel"); cancel.SetBounds(406, 150, 100, 30); cancel.DialogResult = DialogResult.Cancel;
+            f.Controls.AddRange(new Control[] { l1, txtBase, btnBrowse, l2, txtName, lFull, btnOpenDir, ok, cancel });
+            f.AcceptButton = ok; f.CancelButton = cancel;
+            PaintInputs(f);
+            lFull.BorderStyle = BorderStyle.None; lFull.BackColor = Ui.Th.Back; lFull.ForeColor = Ui.Th.Muted;
+            txtBase.Enabled = txtName.Enabled = btnBrowse.Enabled = ok.Enabled = !running;
+
+            EventHandler preview = delegate
+            {
+                string p;
+                try { p = Path.Combine(txtBase.Text.Trim(), txtName.Text.Trim()); } catch (ArgumentException) { p = ""; }
+                lFull.Text = Ui.S("Kayıtlar buraya yazılır:", "Recordings are written to:") + "\r\n" + p;
+            };
+            txtBase.TextChanged += preview; txtName.TextChanged += preview;
+            preview(null, null);
+            btnBrowse.Click += delegate
+            {
+                using (FolderBrowserDialog d = new FolderBrowserDialog())
+                {
+                    d.Description = Ui.S("Kayıt klasörünün oluşturulacağı konumu seçin", "Choose where the recording folder will be created");
+                    if (Directory.Exists(txtBase.Text.Trim())) d.SelectedPath = txtBase.Text.Trim();
+                    if (d.ShowDialog(f) == DialogResult.OK) txtBase.Text = d.SelectedPath;
+                }
+            };
+            btnOpenDir.Click += delegate
+            {
+                try { Directory.CreateDirectory(RecDir); Process.Start(RecDir); }
+                catch (Exception e) { MessageBox.Show(f, e.Message, f.Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+            };
+            ok.Click += delegate
+            {
+                string b = txtBase.Text.Trim(), n = txtName.Text.Trim();
+                string problem = null;
+                if (b.Length == 0 || n.Length == 0) problem = Ui.S("Konum ve klasör adı boş olamaz.", "Location and folder name cannot be empty.");
+                else if (n.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) problem = Ui.S("Klasör adında kullanılamayan bir karakter var (/ : * ? < > | gibi).", "The folder name contains a character that is not allowed (such as / : * ? < > |).");
+                else
+                {
+                    // Yazilabildigini simdi dene: hata test basladiktan sonra degil burada gorulsun
+                    try { Directory.CreateDirectory(Path.Combine(b, n)); }
+                    catch (Exception e) { problem = Ui.S("Klasör oluşturulamadı: ", "Could not create the folder: ") + e.Message; }
+                }
+                if (problem != null) { MessageBox.Show(f, problem, f.Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+                recBase = b; recName = n;
+                SaveSettings();
+                f.DialogResult = DialogResult.OK;
+            };
+            f.ShowDialog(this);
+        }
+    }
+
     bool testNoAsk; // --selftest: onay pencereleri atlanir
 
     // Evet / Hayir onayi; varsayilan dugme Hayir
@@ -462,6 +535,7 @@ class MainForm : Form
         if (running) return;
         if (!Confirm(Ui.S("Tüm ayarlar varsayılan değerlere dönecek (kanal, parametre, limitler, bağlantı). Devam edilsin mi?",
                           "All settings will return to their defaults (channels, parameters, limits, connection). Continue?"))) return;
+        recBase = DefaultBase; recName = "kayitlar";
         try { File.Delete(IniPath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         Rebuild(false);
         SaveSettings();
@@ -930,7 +1004,7 @@ class MainForm : Form
         stTime.Text = running ? Ui.S("Süre ", "Elapsed ") + Span((DateTime.Now - startedAt).TotalSeconds) : "";
         stAlarm.Text = cfg != null && cfg.AlarmIdx >= 0 && n > 0 ? Ui.S("Limit dışı: ", "Out of limit: ") + viol + Ui.S(" kez", " times") : "";
         stAlarm.ForeColor = viol > 0 ? Ui.Th.Bad : Ui.Th.Text;
-        stFile.Text = recFile.Length > 0 ? Ui.S("Kayıt: kayitlar\\", "Recording: kayitlar\\") + recFile : "";
+        stFile.Text = recFile.Length > 0 ? Ui.S("Kayıt: ", "Recording: ") + recName + "\\" + recFile : "";
         RefreshChart(tNow);
     }
 
@@ -1075,6 +1149,8 @@ class MainForm : Form
                 "baglanti=" + (cmbConn.SelectedIndex == 1 ? "ag" : "usb"),
                 "adres=" + txtAddr.Text.Trim(),
                 "komut_seti=" + cmbDialect.SelectedIndex,
+                "kayit_yeri=" + recBase,
+                "kayit_klasoru=" + recName,
                 "dil=" + (Ui.En ? "en" : "tr"),
                 "tema=" + (Ui.Th.Dark ? "koyu" : "acik"),
             });
@@ -1113,6 +1189,8 @@ class MainForm : Form
         if (d.TryGetValue("limit_alt", out v)) txtLow.Text = v;
         if (d.TryGetValue("limit_ust", out v)) txtHigh.Text = v;
         if (d.TryGetValue("ses", out v)) chkBeep.Checked = v == "1";
+        if (d.TryGetValue("kayit_yeri", out v) && v.Length > 0) recBase = v;
+        if (d.TryGetValue("kayit_klasoru", out v) && v.Length > 0) recName = v;
         if (d.TryGetValue("adres", out v)) txtAddr.Text = v;
         if (d.TryGetValue("baglanti", out v)) cmbConn.SelectedIndex = v == "ag" ? 1 : 0;
         if (d.TryGetValue("komut_seti", out v) && int.TryParse(v, out n) && n >= 0 && n < cmbDialect.Items.Count) cmbDialect.SelectedIndex = n;
@@ -1124,6 +1202,27 @@ class MainForm : Form
     {
         Shown += delegate
         {
+            if (mode == "recdlg")
+            {
+                // Kayit yeri penceresini acip goruntusunu al (pencere kipli oldugu icin zamanlayici onu disaridan yakalar)
+                System.Windows.Forms.Timer dt = new System.Windows.Forms.Timer();
+                dt.Interval = 1200;
+                dt.Tick += delegate
+                {
+                    dt.Stop();
+                    Form d = Application.OpenForms[Application.OpenForms.Count - 1];
+                    d.Refresh(); Application.DoEvents(); Thread.Sleep(300);
+                    using (Bitmap b = new Bitmap(d.Width, d.Height))
+                    {
+                        using (Graphics g = Graphics.FromImage(b)) g.CopyFromScreen(d.Location, Point.Empty, d.Size);
+                        b.Save(png);
+                    }
+                    d.Close(); Close();
+                };
+                dt.Start();
+                RecordSettings();
+                return;
+            }
             if (mode == "defaults") { testNoAsk = true; ResetDefaults(); }
             if (mode == "toggle") { cmbLang.SelectedIndex = 1 - cmbLang.SelectedIndex; Application.DoEvents(); cmbTheme.SelectedIndex = 1 - cmbTheme.SelectedIndex; Application.DoEvents(); }
             StartMeasure();

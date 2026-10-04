@@ -22,7 +22,7 @@ Yeni bir marka eklemek için `cihaz.cs` içindeki `Dialect` sınıfına bir komu
 - Kanal (C1–C4) ve ölçüm seçimi: RMS, ortalama (DC), tepe-tepe, frekans, periyot vb.
 - Canlı değer kutuları (min / maks / ortalama) ve canlı grafik (30 sn – 3 gün arası zaman aralığı; veri pencereden uzunsa alttaki çubukla geçmişte gezilir)
 - Limit kontrolü: değer alt/üst limitin dışına çıkınca uyarır, olayı saatiyle ve süresiyle kaydeder
-- CSV kaydı (`kayitlar` klasörüne; bilgisayarın bölge ayarıyla yazılır, Excel'de doğrudan açılır)
+- CSV kaydı (varsayılan `kayitlar` klasörüne; **Kayıt yeri…** ile konum ve klasör adı test başlamadan seçilebilir)
 - Osiloskop ekran görüntüsü alma (yalnızca Siglent)
 - Türkçe / İngilizce arayüz ve açık / koyu tema (üst çubuktaki listelerden)
 - Grafiği temizleme (onay sorar; CSV kayıtlarına dokunmaz) ve tüm ayarları varsayılana döndürme

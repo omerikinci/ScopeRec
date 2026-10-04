@@ -246,6 +246,9 @@ class ViewerForm : Form
     StatusStrip status;
     ToolStripStatusLabel stCursor, stView;
     readonly string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+    // ScopeRec'te secilen kayit yeri; "Dosya ac" penceresi burada acilir
+    string recBase = AppDomain.CurrentDomain.BaseDirectory, recName = "kayitlar";
+    string recDir { get { try { return Path.Combine(recBase, recName); } catch (ArgumentException) { return baseDir; } } }
 
     public ViewerForm()
     {
@@ -275,6 +278,8 @@ class ViewerForm : Form
             if (line == "dil=en") Ui.En = true;
             else if (line == "dil=tr") Ui.En = false;
             else if (line == "tema=koyu") Ui.Th = Theme.MakeDark();
+            else if (line.StartsWith("kayit_yeri=") && line.Length > 11) recBase = line.Substring(11);
+            else if (line.StartsWith("kayit_klasoru=") && line.Length > 14) recName = line.Substring(14);
         }
     }
 
@@ -387,7 +392,7 @@ class ViewerForm : Form
             {
                 d.Multiselect = true;
                 d.Filter = Ui.S("Kayıt ve log dosyaları", "Recording and log files") + "|*.csv;*.txt";
-                string dir = Path.Combine(baseDir, "kayitlar");
+                string dir = recDir;
                 if (Directory.Exists(dir)) d.InitialDirectory = dir;
                 if (d.ShowDialog(this) == DialogResult.OK) OpenFiles(d.FileNames);
             }
