@@ -50,6 +50,8 @@ yalnızca seri kayıt dosyası bırakılırsa onu tek başına açar.
 
 ## Kayıt görüntüleyici (ScopeView)
 
+<p align="center"><img src="logo/scopeview-yazi.png" alt="ScopeView" width="420"></p>
+
 `ScopeView.exe` önceden alınmış kayıtları inceler. Ölçüm dosyasını (`olcum_….csv`) ve log dosyasını (`…_log.txt` ya da `…_olaylar.csv`)
 pencereye sürükleyip bırakın; yalnızca ölçüm dosyası bırakılırsa yanındaki log kendiliğinden açılır.
 
