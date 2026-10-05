@@ -104,7 +104,9 @@ partial class MainForm : Form
     string IniPath { get { return Path.Combine(baseDir, "ayarlar.ini"); } }
 
     // arayuz
-    Button btnStart, btnFolder, btnShot, btnReset, btnDefaults;
+    Button btnStart, btnEnd, btnFolder, btnShot, btnReset, btnDefaults;
+    bool testActive;            // bir test acik (olcuyor ya da duraklatilmis); "Testi bitir" ile kapanir
+    volatile string testStem;   // acik testin kayit dosyalarinin kok adi (kayit yoksa null)
     CheckBox chkRecord, chkAlarm, chkBeep;
     CheckBox[] chkChan = new CheckBox[4];
     CheckedListBox lstParams;
@@ -164,7 +166,7 @@ partial class MainForm : Form
         uiTimer.Interval = 250;
         uiTimer.Tick += delegate { RefreshUi(); };
         uiTimer.Start();
-        FormClosing += delegate { StopMeasure(); SaveSettings(); SerialDisconnectAll(); };
+        FormClosing += delegate { EndTest(false); SaveSettings(); SerialDisconnectAll(); };
         Shown += delegate { Config c = ReadConn(); ThreadPool.QueueUserWorkItem(delegate { if (!running) WithDevice(c, null); }); };
         Shown += delegate { SerialAutoConnect(); }; // gecen sefer acik olan seri baglantilari yeniden ac
     }
@@ -320,17 +322,20 @@ partial class MainForm : Form
         Panel top = new Panel();
         top.Dock = DockStyle.Top; top.Height = 58; top.BackColor = Ui.Th.Bar;
         btnStart = new Button();
-        btnStart.SetBounds(10, 9, 150, 40);
+        btnStart.SetBounds(10, 9, 130, 40);
         btnStart.Font = new Font("Segoe UI", 11f, FontStyle.Bold);
         btnStart.FlatStyle = FlatStyle.Flat; btnStart.ForeColor = Color.White;
         btnStart.Click += delegate { if (running) StopMeasure(); else StartMeasure(); };
         chkRecord = new CheckBox(); chkRecord.Text = Ui.S("CSV dosyasına kaydet", "Record to CSV file"); chkRecord.Checked = true;
-        chkRecord.SetBounds(176, 19, 160, 22);
+        btnEnd = new Button();
+        btnEnd.Text = Ui.S("■  Testi bitir", "■  End test"); btnEnd.SetBounds(146, 9, 104, 40);
+        btnEnd.Click += delegate { EndTest(true); };
+        chkRecord.SetBounds(262, 19, 160, 22);
         chkRecord.CheckedChanged += delegate { wantRecord = chkRecord.Checked; };
-        btnFolder = MakeButton(Ui.S("Kayıt yeri…", "Record to…"), 340, delegate { RecordSettings(); });
-        btnShot = MakeButton(Ui.S("Ekran görüntüsü al", "Take screenshot"), 456, delegate { TakeShot(); });
+        btnFolder = MakeButton(Ui.S("Kayıt yeri…", "Record to…"), 426, delegate { RecordSettings(); });
+        btnShot = MakeButton(Ui.S("Ekran görüntüsü al", "Take screenshot"), 542, delegate { TakeShot(); });
         btnShot.Width = 130;
-        btnReset = MakeButton(Ui.S("İstatistiği sıfırla", "Reset statistics"), 592, delegate { lock (lk) { foreach (SeriesData s in series) s.ResetStats(); violations = 0; } });
+        btnReset = MakeButton(Ui.S("İstatistiği sıfırla", "Reset statistics"), 678, delegate { lock (lk) { foreach (SeriesData s in series) s.ResetStats(); violations = 0; } });
         btnReset.Width = 120;
         lblDevice = new Label();
         lblDevice.Dock = DockStyle.Right; lblDevice.Width = 270;
@@ -339,13 +344,13 @@ partial class MainForm : Form
         // dil ve tema: degisince arayuz bastan kurulur (olcum surerken kilitli)
         cmbLang = MakeCombo(78); cmbLang.Items.AddRange(new object[] { "Türkçe", "English" });
         cmbLang.SelectedIndex = Ui.En ? 1 : 0;
-        cmbLang.SetBounds(724, 17, 78, 24);
+        cmbLang.SetBounds(810, 17, 78, 24);
         cmbLang.SelectedIndexChanged += delegate { Ui.En = cmbLang.SelectedIndex == 1; BeginInvoke(new MethodInvoker(Rebuild)); };
         cmbTheme = MakeCombo(74); cmbTheme.Items.AddRange(new object[] { Ui.S("Açık", "Light"), Ui.S("Koyu", "Dark") });
         cmbTheme.SelectedIndex = Ui.Th.Dark ? 1 : 0;
-        cmbTheme.SetBounds(808, 17, 74, 24);
+        cmbTheme.SetBounds(894, 17, 74, 24);
         cmbTheme.SelectedIndexChanged += delegate { Ui.Th = cmbTheme.SelectedIndex == 1 ? Theme.MakeDark() : Theme.Light(); BeginInvoke(new MethodInvoker(Rebuild)); };
-        top.Controls.AddRange(new Control[] { btnStart, chkRecord, btnFolder, btnShot, btnReset, cmbLang, cmbTheme, lblDevice });
+        top.Controls.AddRange(new Control[] { btnStart, btnEnd, chkRecord, btnFolder, btnShot, btnReset, cmbLang, cmbTheme, lblDevice });
         topBar = top;
 
         StatusStrip st = new StatusStrip();
@@ -554,7 +559,7 @@ partial class MainForm : Form
     // Tum ayarlari ilk kurulumdaki haline getirir (dil ve tema ayni kalir)
     void ResetDefaults()
     {
-        if (running) return;
+        if (testActive) return;
         if (!Confirm(Ui.S("Tüm ayarlar varsayılan değerlere dönecek (kanal, parametre, limitler, bağlantı). Devam edilsin mi?",
                           "All settings will return to their defaults (channels, parameters, limits, connection). Continue?"))) return;
         recBase = DefaultBase; recName = "kayitlar";
@@ -568,7 +573,7 @@ partial class MainForm : Form
 
     void Rebuild(bool keepSettings)
     {
-        if (running) return;
+        if (testActive) return;
         if (keepSettings) SaveSettings();
         object[] log = new object[lstLog.Items.Count];
         lstLog.Items.CopyTo(log, 0);
@@ -636,8 +641,9 @@ partial class MainForm : Form
 
     void SetStartButton()
     {
-        btnStart.Text = running ? Ui.S("■  Durdur", "■  Stop") : Ui.S("▶  Başlat", "▶  Start");
-        btnStart.BackColor = running ? Color.FromArgb(198, 40, 40) : Color.FromArgb(46, 125, 50);
+        btnStart.Text = running ? Ui.S("‖  Duraklat", "‖  Pause") : testActive ? Ui.S("▶  Devam et", "▶  Resume") : Ui.S("▶  Başlat", "▶  Start");
+        if (btnEnd != null) btnEnd.Enabled = testActive;
+        btnStart.BackColor = running ? Color.FromArgb(200, 120, 0) : Color.FromArgb(46, 125, 50);
     }
 
     void UpdateLimitLabels()
@@ -693,6 +699,7 @@ partial class MainForm : Form
 
     void StartMeasure()
     {
+        if (testActive) { ResumeMeasure(); return; } // duraklatilmis test: kaldigi yerden devam
         Config c = ReadConn();
         if (c.Lan && c.Addr.Length == 0)
         {
@@ -734,6 +741,7 @@ partial class MainForm : Form
         if (!c.Params.Contains((ParamInfo)cmbChart.SelectedItem)) cmbChart.SelectedItem = c.Params[0];
         BuildCards();
         startedAt = DateTime.Now;
+        testActive = true; testStem = null;
         running = true; uiRunning = true;
         wantRecord = chkRecord.Checked;
         foreach (Control ctl in lockWhileRunning) ctl.Enabled = false;
@@ -744,12 +752,43 @@ partial class MainForm : Form
         worker.Start();
     }
 
+    // Duraklat: olcum is parcacigini durdurur, cihazi birakir. Test acik kalir: grafik, kayit dosyalari ve sure korunur,
+    // "Devam et" ile ayni teste kaldigi yerden devam edilir.
     void StopMeasure()
     {
         if (!running && !uiRunning) return;
         running = false;
         if (worker != null) worker.Join(6000);
         worker = null; uiRunning = false;
+        SetStartButton();
+    }
+
+    // Kaldigi yerden devam: seriler, zaman ekseni ve kayit dosyalari ayni; aradaki bosluk grafikte kesik olarak gorunur
+    void ResumeMeasure()
+    {
+        double t = plotClock.Elapsed.TotalSeconds;
+        lock (lk) foreach (SeriesData s in series) if (s.T.Count > 0) s.Add(t, double.NaN); // cizgi duraklamanin ustunden gecmesin
+        running = true; uiRunning = true;
+        wantRecord = chkRecord.Checked;
+        SetStartButton();
+        worker = new Thread(Work);
+        worker.IsBackground = true;
+        worker.Start();
+    }
+
+    // Testi bitir: olcumu durdurur, kayit dosyalarini kapatir. Sonraki "Baslat" sifirdan yeni bir test acar.
+    void EndTest(bool ask)
+    {
+        if (!testActive) return;
+        if (ask && !Confirm(Ui.S("Test bitirilsin mi?\n\nKayıt dosyaları kapatılır; yeniden başlatınca grafik ve süre sıfırdan başlar.",
+                                 "End the test?\n\nThe record files are closed; starting again begins a new test from zero."))) return;
+        StopMeasure();
+        testActive = false;
+        string stem = testStem;
+        testStem = null; measStem = null;
+        Log(Ui.S("Test bitti", "Test ended"));
+        if (stem != null) LogSaved(stem);
+        SetLogFile(null);
         foreach (Control ctl in lockWhileRunning) ctl.Enabled = true;
         txtAddr.Enabled = cmbConn.SelectedIndex == 1;
         SetStartButton();
@@ -833,7 +872,7 @@ partial class MainForm : Form
         int errs = 0;
         double outSince = 0;
         double[] vals = new double[series.Count];
-        Log(Ui.S("Ölçüm başladı", "Measurement started"));
+        Log(samples > 0 ? Ui.S("Ölçüme devam ediliyor", "Measurement resumed") : Ui.S("Ölçüm başladı", "Measurement started"));
         try
         {
             while (running)
@@ -873,31 +912,41 @@ partial class MainForm : Form
                     // kayit ac/kapa (calisirken de degistirilebilir)
                     if (wantRecord && csv == null)
                     {
-                        Directory.CreateDirectory(RecDir);
-                        string name = Path.Combine(RecDir, "olcum_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
-                        csv = new StreamWriter(name + ".csv", false, new UTF8Encoding(true));
+                        // Duraklatilmis testin devami ise ayni dosyalarin sonuna eklenir; yeni testte yeni dosyalar acilir
+                        string name = testStem;
+                        bool resume = name != null && File.Exists(name + ".csv");
+                        if (!resume)
+                        {
+                            Directory.CreateDirectory(RecDir);
+                            name = Path.Combine(RecDir, "olcum_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+                        }
+                        csv = new StreamWriter(name + ".csv", resume, new UTF8Encoding(true));
                         csv.AutoFlush = true;
-                        StringBuilder h = new StringBuilder(Ui.S("zaman", "time") + Sep + "t[s]");
-                        foreach (SeriesData s in series) h.Append(Sep + s.Key + "[" + s.P.Unit + "]");
-                        csv.WriteLine(h);
+                        if (!resume)
+                        {
+                            StringBuilder h = new StringBuilder(Ui.S("zaman", "time") + Sep + "t[s]");
+                            foreach (SeriesData s in series) h.Append(Sep + s.Key + "[" + s.P.Unit + "]");
+                            csv.WriteLine(h);
+                        }
                         if (c.AlarmIdx >= 0)
                         {
-                            evCsv = new StreamWriter(name + "_olaylar.csv", false, new UTF8Encoding(true));
+                            evCsv = new StreamWriter(name + "_olaylar.csv", resume, new UTF8Encoding(true));
                             evCsv.AutoFlush = true;
-                            evCsv.WriteLine(Ui.S("zaman", "time") + Sep + "t[s]" + Sep + Ui.S("olay", "event") + Sep + Ui.S("deger", "value") + Sep + Ui.S("limit disi sure[s]", "out of limit[s]"));
+                            if (!resume) evCsv.WriteLine(Ui.S("zaman", "time") + Sep + "t[s]" + Sep + Ui.S("olay", "event") + Sep + Ui.S("deger", "value") + Sep + Ui.S("limit disi sure[s]", "out of limit[s]"));
                         }
-                        SetLogFile(name + "_log.txt");
+                        if (!resume) SetLogFile(name + "_log.txt"); // devamda log dosyasi zaten acik
                         recPath = name;
+                        testStem = name;
                         measStem = name; // seri port satirlari da ayni ada yazilsin
                         recFile = Path.GetFileName(name + ".csv");
-                        Log(Ui.S("Kayıt: ", "Recording: ") + recFile);
+                        Log((resume ? Ui.S("Kayda devam: ", "Recording continues: ") : Ui.S("Kayıt: ", "Recording: ")) + recFile);
                     }
                     else if (!wantRecord && csv != null)
                     {
                         // once olay listesine (ve log dosyasina) nereye yazildigini dus, sonra dosyalari kapat
                         Log(Ui.S("Kayıt durduruldu", "Recording stopped"));
                         LogSaved(recPath); recPath = null;
-                        measStem = null;
+                        measStem = null; testStem = null; // kayit yeniden acilirsa yeni dosya baslar
                         csv.Close(); csv = null;
                         SetLogFile(null);
                         if (evCsv != null) { evCsv.Close(); evCsv = null; }
@@ -960,10 +1009,8 @@ partial class MainForm : Form
             if (evCsv != null) evCsv.Close();
             if (u != null) u.Dispose();
             recFile = "";
-            Log(Ui.S("Ölçüm durdu", "Measurement stopped"));
-            measStem = null;
-            if (recPath != null) LogSaved(recPath);
-            SetLogFile(null);
+            // Duraklatma: test acik kalir. Log dosyasi ve seri kayitlar kapanmaz; "Testi bitir" kapatir.
+            Log(Ui.S("Ölçüm duraklatıldı", "Measurement paused"));
         }
     }
 
@@ -1044,10 +1091,10 @@ partial class MainForm : Form
                 if (m >= 2 && T[T.Count - 1] > T[T.Count - m]) rate = (m - 1) / (T[T.Count - 1] - T[T.Count - m]);
             }
         }
-        stState.Text = running ? (connected ? Ui.S("Ölçülüyor", "Measuring") : Ui.S("Cihaz bekleniyor", "Waiting for device")) : Ui.S("Hazır", "Ready");
+        stState.Text = running ? (connected ? Ui.S("Ölçülüyor", "Measuring") : Ui.S("Cihaz bekleniyor", "Waiting for device")) : testActive ? Ui.S("Duraklatıldı", "Paused") : Ui.S("Hazır", "Ready");
         stCount.Text = n > 0 ? n + Ui.S(" okuma", " readings") : "";
         stRate.Text = running && rate > 0 ? rate.ToString("F1", Cur) + Ui.S(" okuma/sn", " readings/s") : "";
-        stTime.Text = running ? Ui.S("Süre ", "Elapsed ") + Span((DateTime.Now - startedAt).TotalSeconds) : "";
+        stTime.Text = testActive ? Ui.S("Süre ", "Elapsed ") + Span((DateTime.Now - startedAt).TotalSeconds) : "";
         stAlarm.Text = cfg != null && cfg.AlarmIdx >= 0 && n > 0 ? Ui.S("Limit dışı: ", "Out of limit: ") + viol + Ui.S(" kez", " times") : "";
         stAlarm.ForeColor = viol > 0 ? Ui.Th.Bad : Ui.Th.Text;
         stFile.Text = recFile.Length > 0 ? Ui.S("Kayıt: ", "Recording: ") + recName + "\\" + recFile : "";
@@ -1306,7 +1353,7 @@ partial class MainForm : Form
                 if (lo < 0 || V[j] < V[lo]) lo = j;
                 if (hi < 0 || V[j] > V[hi]) hi = j;
             }
-            if (lo < 0) continue;
+            if (lo < 0) { x.Add(T[i]); y.Add(double.NaN); continue; } // gecersiz olcum ya da duraklama: cizgide bosluk
             int a = Math.Min(lo, hi), b = Math.Max(lo, hi);
             x.Add(T[a]); y.Add(V[a]);
             if (b != a) { x.Add(T[b]); y.Add(V[b]); }
@@ -1433,7 +1480,13 @@ partial class MainForm : Form
                     yLo = zc - (zc - zl) * 0.36; yHi = zc + (zh - zc) * 0.36;
                 }
                 if (mode == "sersend") { ses[0].Send.Text = "TEST:123"; SerialSend(ses[0]); Application.DoEvents(); Thread.Sleep(400); RefreshUi(); }
-                if (mode == "stop") { StopMeasure(); Application.DoEvents(); Thread.Sleep(600); Application.DoEvents(); } // durdurduktan sonraki olay listesi
+                if (mode == "pause")
+                {
+                    // duraklat, 3 sn bekle, devam et, 4 sn daha olc: grafikte bosluk ve ayni dosyaya devam beklenir
+                    StopMeasure(); for (int z = 0; z < 12; z++) { Application.DoEvents(); Thread.Sleep(250); RefreshUi(); }
+                    StartMeasure(); for (int z = 0; z < 16; z++) { Application.DoEvents(); Thread.Sleep(250); RefreshUi(); }
+                }
+                if (mode == "stop") { EndTest(false); Application.DoEvents(); Thread.Sleep(600); Application.DoEvents(); } // durdurduktan sonraki olay listesi
                 if (mode == "clear") { testNoAsk = true; ClearChart(); Application.DoEvents(); Thread.Sleep(1200); Application.DoEvents(); }
                 RefreshUi();
                 // Ekrandaki gercek pikseller (yalnizca bu pencerenin alani); DrawToBitmap ozel cizimleri yanlis gosteriyor

@@ -105,7 +105,7 @@ partial class MainForm
         Controls.Add(serPanel);
 
         btnSerToggle = new Button();
-        btnSerToggle.Text = Ui.S("Seri port", "Serial port"); btnSerToggle.SetBounds(890, 14, 86, 30);
+        btnSerToggle.Text = Ui.S("Seri port", "Serial port"); btnSerToggle.SetBounds(976, 14, 86, 30);
         btnSerToggle.Click += delegate { serPanelOn = !serPanelOn; serPanel.Visible = serSplit.Visible = serPanelOn; };
         topBar.Controls.Add(btnSerToggle);
         btnSerToggle.BringToFront();
