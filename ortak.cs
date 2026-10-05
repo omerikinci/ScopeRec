@@ -78,6 +78,7 @@ static class Fmt
     {
         if (double.IsNaN(v)) return "—";
         if (unit == "%") return v.ToString("0.##", Cur) + " %";
+        if (unit.Length == 0) return Plain(v, 6); // birimsiz (seri port) degerler oldugu gibi
         double a = Math.Abs(v);
         string pre = ""; double k = 1;
         if (a == 0) { }

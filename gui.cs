@@ -87,7 +87,7 @@ class Config
     public int DialectIdx;             // Dialect.Names icindeki sira
 }
 
-class MainForm : Form
+partial class MainForm : Form
 {
     static readonly CultureInfo Cur = CultureInfo.CurrentCulture;
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -153,7 +153,7 @@ class MainForm : Form
         Text = "ScopeRec";
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
         Font = new Font("Segoe UI", 9f);
-        ClientSize = new Size(1180, 760);
+        ClientSize = new Size(Math.Min(1560, Screen.PrimaryScreen.WorkingArea.Width - 60), Math.Min(820, Screen.PrimaryScreen.WorkingArea.Height - 80));
         MinimumSize = new Size(900, 600);
         StartPosition = FormStartPosition.CenterScreen;
         LoadPrefs();
@@ -164,8 +164,9 @@ class MainForm : Form
         uiTimer.Interval = 250;
         uiTimer.Tick += delegate { RefreshUi(); };
         uiTimer.Start();
-        FormClosing += delegate { StopMeasure(); SaveSettings(); };
+        FormClosing += delegate { StopMeasure(); SaveSettings(); SerialDisconnect(null); };
         Shown += delegate { Config c = ReadConn(); ThreadPool.QueueUserWorkItem(delegate { if (!running) WithDevice(c, null); }); };
+        Shown += delegate { if (serAuto) SerialConnect(); }; // gecen sefer bagliysa seri porta yeniden baglan
     }
 
     // ---------------------------------------------------------------- arayuz kurulumu
@@ -359,6 +360,7 @@ class MainForm : Form
 
         // Dock sirasi: son eklenen once yerlesir
         Controls.Add(main);
+        BuildSerialPanel();
         Controls.Add(left);
         Controls.Add(top);
         Controls.Add(st);
@@ -397,6 +399,7 @@ class MainForm : Form
         BackColor = t.Back; ForeColor = t.Text; // panel, etiket, onay kutusu gibi denetimler bunlari devralir
         topBar.BackColor = t.Bar;
         PaintInputs(this);
+        SerialTheme();
         btnStart.ForeColor = Color.White; btnStart.FlatAppearance.BorderSize = 0;
         for (int i = 0; i < 4; i++) chkChan[i].ForeColor = t.Chan[i];
 
@@ -433,7 +436,7 @@ class MainForm : Form
         Theme t = Ui.Th;
         foreach (Control c in parent.Controls)
         {
-            if (c is TextBox || c is ListBox || c is NumericUpDown || c is ComboBox)
+            if (c is TextBox || c is ListBox || c is NumericUpDown || c is ComboBox || c is ListView)
             {
                 c.BackColor = t.Input; c.ForeColor = t.Text;
                 if (t.Dark)
@@ -544,6 +547,7 @@ class MainForm : Form
         if (!Confirm(Ui.S("Tüm grafik silinecektir. Devam edilsin mi?\n\n(CSV dosyasına yazılmış kayıtlar silinmez.)",
                           "The whole chart will be cleared. Continue?\n\n(Recordings already written to CSV are not deleted.)"))) return;
         lock (lk) { foreach (SeriesData s in series) { s.T.Clear(); s.V.Clear(); s.ResetStats(); } }
+        ClearSerialSeries();
         follow = true;
     }
 
@@ -554,6 +558,7 @@ class MainForm : Form
         if (!Confirm(Ui.S("Tüm ayarlar varsayılan değerlere dönecek (kanal, parametre, limitler, bağlantı). Devam edilsin mi?",
                           "All settings will return to their defaults (channels, parameters, limits, connection). Continue?"))) return;
         recBase = DefaultBase; recName = "kayitlar";
+        SerialDefaults();
         try { File.Delete(IniPath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         Rebuild(false);
         SaveSettings();
@@ -582,6 +587,8 @@ class MainForm : Form
     }
 
     // Dil ve tema arayuz kurulmadan once okunur; kayit yoksa dil Windows diline gore secilir
+    readonly Dictionary<string, string> serIni = new Dictionary<string, string>();
+
     void LoadPrefs()
     {
         Ui.En = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName != "tr";
@@ -591,7 +598,9 @@ class MainForm : Form
             if (line == "dil=en") Ui.En = true;
             else if (line == "dil=tr") Ui.En = false;
             else if (line == "tema=koyu") Ui.Th = Theme.MakeDark();
+            else if (line.StartsWith("seri_") && line.IndexOf('=') > 0) serIni[line.Substring(0, line.IndexOf('='))] = line.Substring(line.IndexOf('=') + 1);
         }
+        SerialLoadSettings(serIni);
     }
 
     Label MakeLabel(string text, int topMargin)
@@ -665,6 +674,7 @@ class MainForm : Form
     {
         Log(Ui.S("Kayıt dosyası: ", "Recording file: ") + stem + ".csv");
         Log(Ui.S("Log dosyası: ", "Log file: ") + stem + "_log.txt");
+        if (File.Exists(stem + "_seri.txt")) Log(Ui.S("Seri port kaydı: ", "Serial record: ") + stem + "_seri.txt");
     }
 
     void SetLogFile(string path)
@@ -716,6 +726,8 @@ class MainForm : Form
         SeriesData.Cap = Math.Max(200000, 6000000 / list.Count);
         follow = true; zoomWin = 0; yLo = yHi = double.NaN; pendingStart = double.NaN;
         lock (lk) { series = list; samples = 0; violations = 0; lastT = 0; }
+        plotClock = Stopwatch.StartNew(); // olcum ve seri veri ayni sifirdan baslar
+        ClearSerialSeries();
         cfg = c;
         alarmOut = false;
         // grafikte secili parametre olculmuyorsa ilk olculene gec
@@ -816,7 +828,7 @@ class MainForm : Form
         foreach (ParamInfo p in c.Params) codes.Add(p.Code);
         StreamWriter csv = null, evCsv = null;
         string recPath = null; // acik kaydin uzantisiz tam yolu
-        Stopwatch sw = Stopwatch.StartNew();
+        Stopwatch sw = plotClock;
         runClock = sw;
         int errs = 0;
         double outSince = 0;
@@ -876,6 +888,7 @@ class MainForm : Form
                         }
                         SetLogFile(name + "_log.txt");
                         recPath = name;
+                        measStem = name; // seri port satirlari da ayni ada yazilsin
                         recFile = Path.GetFileName(name + ".csv");
                         Log(Ui.S("Kayıt: ", "Recording: ") + recFile);
                     }
@@ -884,6 +897,7 @@ class MainForm : Form
                         // once olay listesine (ve log dosyasina) nereye yazildigini dus, sonra dosyalari kapat
                         Log(Ui.S("Kayıt durduruldu", "Recording stopped"));
                         LogSaved(recPath); recPath = null;
+                        measStem = null;
                         csv.Close(); csv = null;
                         SetLogFile(null);
                         if (evCsv != null) { evCsv.Close(); evCsv = null; }
@@ -947,6 +961,7 @@ class MainForm : Form
             if (u != null) u.Dispose();
             recFile = "";
             Log(Ui.S("Ölçüm durdu", "Measurement stopped"));
+            measStem = null;
             if (recPath != null) LogSaved(recPath);
             SetLogFile(null);
         }
@@ -1012,7 +1027,7 @@ class MainForm : Form
         long n, viol; double tNow, rate = 0;
         lock (lk)
         {
-            n = samples; viol = violations; tNow = lastT;
+            n = samples; viol = violations; tNow = Math.Max(lastT, serLastT);
             for (int i = 0; i < series.Count && cardValue != null && i < cardValue.Length; i++)
             {
                 SeriesData s = series[i];
@@ -1036,6 +1051,7 @@ class MainForm : Form
         stAlarm.Text = cfg != null && cfg.AlarmIdx >= 0 && n > 0 ? Ui.S("Limit dışı: ", "Out of limit: ") + viol + Ui.S(" kez", " times") : "";
         stAlarm.ForeColor = viol > 0 ? Ui.Th.Bad : Ui.Th.Text;
         stFile.Text = recFile.Length > 0 ? Ui.S("Kayıt: ", "Recording: ") + recName + "\\" + recFile : "";
+        RefreshSerial();
         RefreshChart(tNow);
     }
 
@@ -1050,10 +1066,16 @@ class MainForm : Form
         List<string> names = new List<string>();
         List<double[]> xs = new List<double[]>(), ys = new List<double[]>();
         double maxAbs = 0, t0, t1;
+        List<string> serNames = new List<string>();
+        List<double[]> serXs = new List<double[]>(), serYs = new List<double[]>();
         lock (lk)
         {
             // Kaydirma: veri pencereden uzunsa cubuk gecmiste gezdirir; en sagda ise canli veriyi izler
-            double tFirst = series.Count > 0 && series[0].T.Count > 0 ? series[0].T[0] : 0;
+            // en eski veri: olcum serileri ve seri port serileri birlikte
+            double tFirst = double.MaxValue;
+            if (series.Count > 0 && series[0].T.Count > 0) tFirst = series[0].T[0];
+            foreach (SeriesData ss in serSeries.Values) if (ss.T.Count > 0 && ss.T[0] < tFirst) tFirst = ss.T[0];
+            if (tFirst == double.MaxValue) tFirst = 0;
             double total = tNow - tFirst;
             if (total <= win)
             {
@@ -1096,6 +1118,19 @@ class MainForm : Form
                 foreach (double v in y) if (Math.Abs(v) > maxAbs) maxAbs = Math.Abs(v);
                 names.Add(s.Ch); xs.Add(x.ToArray()); ys.Add(y.ToArray());
             }
+            // seri porttan gelen, isaretli degerler: sag eksende, olceklenmeden
+            foreach (string key in serKeys)
+            {
+                if (!serShown.Contains(key)) continue;
+                SeriesData s = serSeries[key];
+                int i0 = s.T.BinarySearch(t0), i1 = s.T.BinarySearch(t1);
+                if (i0 < 0) i0 = ~i0;
+                if (i1 < 0) i1 = ~i1; else i1++;
+                List<double> x = new List<double>(), y = new List<double>();
+                Decimate(s.T, s.V, i0, i1, x, y);
+                for (int j = 0; j < x.Count; j++) x[j] /= div;
+                serNames.Add(key); serXs.Add(x.ToArray()); serYs.Add(y.ToArray());
+            }
         }
         // eksen birimi: degerler kucukse mV / µs gibi olcekle
         string pre = ""; double k = 1;
@@ -1118,7 +1153,7 @@ class MainForm : Form
         area.AxisX.Minimum = t0 / div;
         area.AxisX.Maximum = t1 / div;
 
-        if (chart.Series.Count != names.Count) chart.Series.Clear();
+        if (chart.Series.Count != names.Count + serNames.Count) chart.Series.Clear();
         for (int i = 0; i < names.Count; i++)
         {
             if (chart.Series.Count <= i)
@@ -1128,12 +1163,28 @@ class MainForm : Form
                 chart.Series.Add(cs);
             }
             Series c = chart.Series[i];
-            c.LegendText = names[i];
+            c.LegendText = names[i]; c.YAxisType = AxisType.Primary; c.BorderDashStyle = ChartDashStyle.Solid;
             c.Color = Ui.Th.Chan[Array.IndexOf(Chans, names[i])];
             double[] y = ys[i];
             for (int j = 0; j < y.Length; j++) y[j] *= k;
             c.Points.DataBindXY(xs[i], y);
         }
+
+        for (int i = 0; i < serNames.Count; i++)
+        {
+            int si = names.Count + i;
+            if (chart.Series.Count <= si)
+            {
+                Series cs = new Series();
+                cs.ChartType = SeriesChartType.Line; cs.BorderWidth = 2;
+                chart.Series.Add(cs);
+            }
+            Series c = chart.Series[si];
+            c.LegendText = serNames[i] + Ui.S(" (seri)", " (serial)"); c.YAxisType = AxisType.Secondary; c.BorderDashStyle = ChartDashStyle.Dash;
+            c.Color = SerColors[serKeys.IndexOf(serNames[i]) % SerColors.Length];
+            c.Points.DataBindXY(serXs[i], serYs[i]);
+        }
+        area.AxisY2.Enabled = serNames.Count > 0 ? AxisEnabled.True : AxisEnabled.False;
 
         area.AxisY.StripLines.Clear();
         if (cfg != null && cfg.AlarmIdx >= 0 && cfg.AlarmIdx < series.Count && series[cfg.AlarmIdx].P == p)
@@ -1221,6 +1272,21 @@ class MainForm : Form
                 sb.Append("\n" + s.Ch + "  " + Eng(s.V[i], s.P.Unit));
             }
         }
+        lock (lk)
+        {
+            foreach (string key in serKeys)
+            {
+                if (!serShown.Contains(key)) continue;
+                SeriesData s = serSeries[key];
+                if (s.T.Count == 0) continue;
+                int i = s.T.BinarySearch(t);
+                if (i < 0) i = Math.Min(~i, s.T.Count - 1);
+                if (i > 0 && Math.Abs(s.T[i - 1] - t) < Math.Abs(s.T[i] - t)) i--;
+                if (Math.Abs(s.T[i] - t) > Math.Max(1.0, WindowSeconds() / 100)) continue;
+                if (sb.Length == 0) sb.Append(s.T[i] < 60 ? s.T[i].ToString("0.0", Cur) + " s" : Span(s.T[i]));
+                sb.Append("\n" + key + "  " + SerNum(s.V[i]));
+            }
+        }
         if (sb.Length == 0) { lblHover.Visible = false; return; }
         HoverTip.Show(lblHover, sb.ToString(), hoverPt);
     }
@@ -1256,7 +1322,7 @@ class MainForm : Form
             List<string> ch = new List<string>(), pr = new List<string>();
             for (int i = 0; i < 4; i++) if (chkChan[i].Checked) ch.Add(Chans[i]);
             foreach (object o in lstParams.CheckedItems) pr.Add(((ParamInfo)o).Code);
-            File.WriteAllLines(IniPath, new string[] {
+            List<string> ini = new List<string>(new string[] {
                 "kanallar=" + string.Join(",", ch.ToArray()),
                 "parametreler=" + string.Join(",", pr.ToArray()),
                 "aralik=" + numInterval.Value.ToString(Inv),
@@ -1277,6 +1343,8 @@ class MainForm : Form
                 "dil=" + (Ui.En ? "en" : "tr"),
                 "tema=" + (Ui.Th.Dark ? "koyu" : "acik"),
             });
+            SerialSaveSettings(ini);
+            File.WriteAllLines(IniPath, ini.ToArray());
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
@@ -1348,7 +1416,7 @@ class MainForm : Form
             }
             if (mode == "defaults") { testNoAsk = true; ResetDefaults(); }
             if (mode == "toggle") { cmbLang.SelectedIndex = 1 - cmbLang.SelectedIndex; Application.DoEvents(); cmbTheme.SelectedIndex = 1 - cmbTheme.SelectedIndex; Application.DoEvents(); }
-            StartMeasure();
+            if (mode != "seronly") StartMeasure(); // "seronly": yalnizca seri port, olcum yok
             System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
             t.Interval = seconds * 1000;
             t.Tick += delegate
@@ -1364,6 +1432,7 @@ class MainForm : Form
                     double zl = za.AxisY.Minimum / lastK, zh = za.AxisY.Maximum / lastK, zc = (zl + zh) / 2;
                     yLo = zc - (zc - zl) * 0.36; yHi = zc + (zh - zc) * 0.36;
                 }
+                if (mode == "sersend") { txtSerSend.Text = "TEST:123"; SerialSend(); Application.DoEvents(); Thread.Sleep(400); RefreshUi(); }
                 if (mode == "stop") { StopMeasure(); Application.DoEvents(); Thread.Sleep(600); Application.DoEvents(); } // durdurduktan sonraki olay listesi
                 if (mode == "clear") { testNoAsk = true; ClearChart(); Application.DoEvents(); Thread.Sleep(1200); Application.DoEvents(); }
                 RefreshUi();

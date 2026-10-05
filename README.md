@@ -28,6 +28,22 @@ Yeni bir marka eklemek için `cihaz.cs` içindeki `Dialect` sınıfına bir komu
 - Grafiği temizleme (onay sorar; CSV kayıtlarına dokunmaz) ve tüm ayarları varsayılana döndürme
 - Grafikte fare tekerleğiyle zamanda, Ctrl+tekerlekle değer ekseninde yakınlaştırma; çift tık sıfırlar. Fare altındaki anın değeri imlecin yanında görünür
 
+## Seri port (gömülü terminal)
+
+ScopeRec'in sağındaki **Seri port** paneli ayrı bir terminal programına gerek bırakmaz: Arduino, STM32, ESP32, CH340 gibi
+COM portundan veri gönderen cihazları ölçümle aynı pencerede izlersiniz.
+
+- Port ve baud hızı seçip **Bağlan**; gelen satırlar zaman damgasıyla listelenir, alttaki kutudan komut gönderilir (satır sonu seçilebilir)
+- Satırlardaki sayılar kendiliğinden ayıklanır: `SET:1500,ACT:1498,T:+45.3` → SET, ACT, T; `ad=değer` ve yalnızca sayılardan oluşan satırlar (S1, S2…) da tanınır
+- **Gelen değerler** listesinde işaretlenenler, osiloskop ölçümüyle aynı grafikte sağ eksende çizilir (aynı zaman ekseni)
+- Kayıt: ölçüm kaydı açıkken satırlar `<ölçüm adı>_seri.txt` dosyasına, ölçüm yokken `seri_<port>_<tarih>.txt` dosyasına yazılır (saat, t, satır; sekmeyle ayrık)
+- DTR / RTS varsayılan olarak kapalıdır; böylece çalışan bir Arduino'ya bağlanınca kart yeniden başlamaz
+- Port kutusuna `tcp://adres:port` yazılarak ağ üzerinden seri köprülere de bağlanılabilir
+- Üst çubuktaki **Seri port** düğmesi paneli gizler / gösterir; port, hız ve grafikte gösterilen değerler hatırlanır
+
+ScopeView, ölçüm dosyasının yanındaki `…_seri.txt` kaydını kendiliğinden açar ve seri değerleri ölçümle aynı grafikte gösterir;
+yalnızca seri kayıt dosyası bırakılırsa onu tek başına açar.
+
 ## Kayıt görüntüleyici (ScopeView)
 
 `ScopeView.exe` önceden alınmış kayıtları inceler. Ölçüm dosyasını (`olcum_….csv`) ve log dosyasını (`…_log.txt` ya da `…_olaylar.csv`)
@@ -70,7 +86,9 @@ sds.exe --tcp 5025              TCP köprüsü
 | `usb.cs` | WinUSB üzerinden USBTMC çerçevelemesi (ortak) |
 | `cihaz.cs` | Bağlantı arayüzü, ağ bağlantısı ve marka bazlı komut setleri |
 | `ortak.cs` | Dil, tema ve sayı biçimlendirme (iki uygulama için ortak) |
+| `seri.cs` | Seri port bağlantısı, port listesi, satırlardan değer ayıklama |
 | `gui.cs` | ScopeRec: ölçüm uygulaması |
+| `seri_gui.cs` | ScopeRec'in seri port paneli |
 | `kayit.cs` | ScopeView: kayıt görüntüleyici |
 | `sds.cs` | Komut satırı aracı |
 

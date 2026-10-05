@@ -122,6 +122,117 @@ class Recording
         return r;
     }
 
+    // ---- seri port kaydi (ScopeRec'in yazdigi "saat <sekme> t <sekme> satir" dosyasi) ----
+
+    class SerKey { public List<double> T = new List<double>(), V = new List<double>(); }
+
+    static List<string> ReadSerial(string path, Dictionary<string, SerKey> keys, List<double> lineTimes, out DateTime firstClock, out bool hasClock)
+    {
+        List<string> order = new List<string>();
+        firstClock = DateTime.Today; hasClock = false;
+        using (StreamReader sr = new StreamReader(path, Encoding.UTF8))
+        {
+            string line;
+            while ((line = sr.ReadLine()) != null)
+            {
+                double t; string text;
+                if (!SerialParse.SplitRecord(line, out t, out text) || double.IsNaN(t)) continue;
+                List<KeyValuePair<string, double>> kv = SerialParse.Pairs(text);
+                if (kv.Count == 0) continue;
+                if (lineTimes.Count == 0)
+                {
+                    DateTime d;
+                    if (DateTime.TryParseExact(line.Substring(0, line.IndexOf('\t')), "dd.MM.yyyy HH:mm:ss.fff", Inv, DateTimeStyles.None, out d)) { firstClock = d.AddSeconds(-t); hasClock = true; }
+                }
+                lineTimes.Add(t);
+                foreach (KeyValuePair<string, double> p in kv)
+                {
+                    SerKey k;
+                    if (!keys.TryGetValue(p.Key, out k)) { if (keys.Count >= 32) continue; k = new SerKey(); keys[p.Key] = k; order.Add(p.Key); }
+                    k.T.Add(t); k.V.Add(p.Value);
+                }
+            }
+        }
+        return order;
+    }
+
+    void AddColumn(string name, double[] v)
+    {
+        Column c = new Column();
+        c.Name = name; c.Unit = ""; c.V = v;
+        foreach (double x in v)
+        {
+            if (double.IsNaN(x)) continue;
+            if (x < c.Min) c.Min = x;
+            if (x > c.Max) c.Max = x;
+            c.Sum += x; c.N++;
+        }
+        Cols.Add(c);
+    }
+
+    // Seri degerleri olcumun zaman izgarasina oturtur: her olcum ani icin o ana kadar gelen son deger.
+    // Deger cok eskiyse (cihaz susmus) bos birakilir. Eklenen sutun sayisini dondurur.
+    public int AddSerial(string path)
+    {
+        Dictionary<string, SerKey> keys = new Dictionary<string, SerKey>();
+        List<double> times = new List<double>();
+        DateTime clock; bool hasClock;
+        List<string> order = ReadSerial(path, keys, times, out clock, out hasClock);
+        foreach (string name in order)
+        {
+            SerKey k = keys[name];
+            List<double> d = new List<double>();
+            for (int i = 1; i < Math.Min(k.T.Count, 500); i++) d.Add(k.T[i] - k.T[i - 1]);
+            d.Sort();
+            double stale = Math.Max(5.0, d.Count > 0 ? d[d.Count / 2] * 5 : 5.0);
+            double[] v = new double[T.Length];
+            int j = -1;
+            for (int i = 0; i < T.Length; i++)
+            {
+                double t = T[i] + Offset; // seri dosyasindaki t, olcum dosyasindaki ham t ile ayni saatten
+                while (j + 1 < k.T.Count && k.T[j + 1] <= t) j++;
+                v[i] = j >= 0 && t - k.T[j] <= stale ? k.V[j] : double.NaN;
+            }
+            AddColumn(name + Ui.S(" (seri)", " (serial)"), v);
+        }
+        return order.Count;
+    }
+
+    // Olcum dosyasi olmadan, yalnizca seri kayittan: her satir bir zaman noktasi
+    public static Recording FromSerial(string path)
+    {
+        Recording r = new Recording();
+        r.Path = path;
+        Dictionary<string, SerKey> keys = new Dictionary<string, SerKey>();
+        List<double> times = new List<double>();
+        List<string> order = ReadSerial(path, keys, times, out r.Start, out r.HasClock);
+        if (times.Count == 0) throw new InvalidDataException(Ui.S("Seri kayıtta sayısal değer bulunamadı", "No numeric values found in the serial record"));
+        r.Offset = times[0];
+        r.Start = r.Start.AddSeconds(r.Offset);
+        r.T = new double[times.Count];
+        for (int i = 0; i < times.Count; i++) r.T[i] = times[i] - r.Offset;
+        foreach (string name in order)
+        {
+            SerKey k = keys[name];
+            double[] v = new double[times.Count];
+            int j = 0;
+            for (int i = 0; i < times.Count; i++)
+            {
+                // ayni satirdan gelen deger ayni t'yi tasir
+                while (j < k.T.Count && k.T[j] < times[i]) j++;
+                v[i] = j < k.T.Count && k.T[j] == times[i] ? k.V[j] : double.NaN;
+            }
+            r.AddColumn(name, v);
+        }
+        return r;
+    }
+
+    public static bool IsSerialFile(string path)
+    {
+        string n = System.IO.Path.GetFileName(path).ToLowerInvariant();
+        return n.EndsWith("_seri.txt") || n.StartsWith("seri_");
+    }
+
     // Eski kayitlarda basliklarda birim yok; parametre adindan cikarilir
     static string GuessUnit(string name)
     {
@@ -305,7 +416,7 @@ class ViewerForm : Form
         a.CursorX.IsUserEnabled = true; a.CursorX.IsUserSelectionEnabled = true;
         a.CursorX.Interval = 0;
         a.AxisY.IsStartedFromZero = false; a.AxisY2.IsStartedFromZero = false;
-        a.AxisY.LabelStyle.Format = "0.###"; a.AxisY2.LabelStyle.Format = "0.###";
+        a.AxisY.LabelStyle.Format = "0.#####"; a.AxisY2.LabelStyle.Format = "0.#####";
         a.AxisY2.MajorGrid.Enabled = false;
         chart.ChartAreas.Add(a);
         Legend lg = new Legend("l"); lg.Docking = Docking.Top;
@@ -351,8 +462,8 @@ class ViewerForm : Form
         lblHint = new Label();
         lblHint.Dock = DockStyle.Fill; lblHint.TextAlign = ContentAlignment.MiddleCenter;
         lblHint.Font = new Font("Segoe UI", 14f);
-        lblHint.Text = Ui.S("Ölçüm kaydını (olcum_….csv) ve log dosyasını (…_log.txt)\nbu pencereye sürükleyip bırakın",
-                            "Drag and drop the measurement file (olcum_….csv)\nand the log file (…_log.txt) onto this window");
+        lblHint.Text = Ui.S("Ölçüm kaydını (olcum_….csv), log dosyasını (…_log.txt)\nve seri port kaydını (…_seri.txt) bu pencereye sürükleyip bırakın",
+                            "Drag and drop the measurement file (olcum_….csv), the log file (…_log.txt)\nand the serial record (…_seri.txt) onto this window");
         lblHover = HoverTip.Create(chart);
         chartHost.Controls.Add(chart);
         chartHost.Controls.Add(lblHint);
@@ -516,7 +627,7 @@ class ViewerForm : Form
     // Birakilan dosyalari turune gore ayirir; olcum dosyasi tek basina birakilirsa yanindaki log/olay dosyasi da acilir
     public void OpenFiles(string[] paths)
     {
-        string meas = null;
+        string meas = null, serialFile = null;
         List<string> logs = new List<string>();
         List<string> problems = new List<string>();
         foreach (string p in paths)
@@ -525,7 +636,9 @@ class ViewerForm : Form
             {
                 string head;
                 using (StreamReader sr = new StreamReader(p, Encoding.UTF8)) head = sr.ReadLine() ?? "";
-                if (Recording.LooksLikeMeasurement(head)) meas = p; else logs.Add(p);
+                if (Recording.IsSerialFile(p)) serialFile = p;
+                else if (Recording.LooksLikeMeasurement(head)) meas = p;
+                else logs.Add(p);
             }
             catch (Exception e) { problems.Add(Path.GetFileName(p) + ": " + e.Message); }
         }
@@ -537,6 +650,9 @@ class ViewerForm : Form
                 rec = Recording.Load(meas);
                 fileEvents.Clear(); calcEvents.Clear();
                 gapEvents = rec.FindGaps();
+                // yanindaki seri port kaydi da kendiliginden eklenir
+                string seri = Path.Combine(Path.GetDirectoryName(meas), Path.GetFileNameWithoutExtension(meas)) + "_seri.txt";
+                if (serialFile == null && File.Exists(seri)) serialFile = seri;
                 if (logs.Count == 0)
                 {
                     string stem = Path.Combine(Path.GetDirectoryName(meas), Path.GetFileNameWithoutExtension(meas));
@@ -544,6 +660,19 @@ class ViewerForm : Form
                     if (File.Exists(stem + "_log.txt")) logs.Add(stem + "_log.txt");
                     else if (File.Exists(stem + "_olaylar.csv")) logs.Add(stem + "_olaylar.csv");
                 }
+            }
+            if (serialFile != null)
+            {
+                // olcum varsa seri degerler ona sutun olarak eklenir; yoksa seri kayit tek basina acilir
+                if (rec == null || (meas == null && Recording.IsSerialFile(rec.Path)))
+                {
+                    Cursor = Cursors.WaitCursor;
+                    rec = Recording.FromSerial(serialFile);
+                    fileEvents.Clear(); calcEvents.Clear();
+                    gapEvents = rec.FindGaps();
+                    serialFile = null;
+                }
+                else if (rec.AddSerial(serialFile) == 0) problems.Add(Ui.S("Seri kayıtta sayısal değer bulunamadı: ", "No numeric values in the serial record: ") + Path.GetFileName(serialFile));
             }
             foreach (string l in logs)
             {
@@ -563,6 +692,7 @@ class ViewerForm : Form
         {
             string names = Path.GetFileName(rec.Path);
             foreach (string l in logs) names += "   +   " + Path.GetFileName(l);
+            if (serialFile != null) names += "   +   " + Path.GetFileName(serialFile);
             Text = "ScopeView – " + names;
         }
     }
@@ -582,7 +712,7 @@ class ViewerForm : Form
         foreach (Column c in rec.Cols)
         {
             // ilk serinin birimindeki seriler acilista isaretli gelir
-            lstCols.Items.Add(c.Name + " [" + c.Unit + "]", c.Unit == rec.Cols[0].Unit);
+            lstCols.Items.Add(c.Unit.Length > 0 ? c.Name + " [" + c.Unit + "]" : c.Name, c.Unit == rec.Cols[0].Unit);
             cmbLimit.Items.Add(c.Name);
             ListViewItem it = new ListViewItem(c.Name);
             it.SubItems.Add(c.N > 0 ? Fmt.Eng(c.Min, c.Unit) : "—");
@@ -752,11 +882,11 @@ class ViewerForm : Form
             s.Points.DataBindXY(xs, ys);
             chart.Series.Add(s);
         }
-        area.AxisY.Title = unit1 == null ? "" : "[" + unit1 + "]";
+        area.AxisY.Title = AxisTitle(unit1);
         area.AxisY2.Enabled = unit2 != null ? AxisEnabled.True : AxisEnabled.False;
         area.AxisY.Minimum = double.IsNaN(yLo) ? double.NaN : yLo;
         area.AxisY.Maximum = double.IsNaN(yLo) ? double.NaN : yHi;
-        area.AxisY2.Title = unit2 == null ? "" : "[" + unit2 + "]";
+        area.AxisY2.Title = AxisTitle(unit2);
         area.AxisX.Minimum = ToX(viewStart); area.AxisX.Maximum = ToX(viewEnd);
         // Etiket araligi: yuvarlak bir adim; saat modunda saat baslarina, sure modunda kayit basina hizali
         double step = NiceStep((viewEnd - viewStart) / 8);
@@ -803,6 +933,12 @@ class ViewerForm : Form
         area.RecalculateAxesScale();
         stView.Text = Ui.S("Görünen: ", "Showing: ") + Dur(viewEnd - viewStart) + " / " + Dur(T1 - T0) + "   ·   " + rec.T.Length + Ui.S(" okuma", " readings")
             + (skipped.Count > 0 ? "   ·   " + Ui.S("çizilmeyen (üçüncü birim): ", "not drawn (third unit): ") + string.Join(", ", skipped.ToArray()) : "");
+    }
+
+    static string AxisTitle(string unit)
+    {
+        if (unit == null) return "";
+        return unit.Length > 0 ? "[" + unit + "]" : Ui.S("seri port değerleri", "serial values");
     }
 
     static Color SeriesColor(string name, int index)
