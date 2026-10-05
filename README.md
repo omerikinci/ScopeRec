@@ -1,4 +1,4 @@
-<p align="center"><img src="logo/scoperec-logo.png" alt="ScopeRec" width="720"></p>
+<p align="center"><img src="logo/scoperec-yazi.png" alt="ScopeRec" width="560"></p>
 
 # ScopeRec
 
