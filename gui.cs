@@ -164,9 +164,9 @@ partial class MainForm : Form
         uiTimer.Interval = 250;
         uiTimer.Tick += delegate { RefreshUi(); };
         uiTimer.Start();
-        FormClosing += delegate { StopMeasure(); SaveSettings(); SerialDisconnect(null); };
+        FormClosing += delegate { StopMeasure(); SaveSettings(); SerialDisconnectAll(); };
         Shown += delegate { Config c = ReadConn(); ThreadPool.QueueUserWorkItem(delegate { if (!running) WithDevice(c, null); }); };
-        Shown += delegate { if (serAuto) SerialConnect(); }; // gecen sefer bagliysa seri porta yeniden baglan
+        Shown += delegate { SerialAutoConnect(); }; // gecen sefer acik olan seri baglantilari yeniden ac
     }
 
     // ---------------------------------------------------------------- arayuz kurulumu
@@ -598,7 +598,7 @@ partial class MainForm : Form
             if (line == "dil=en") Ui.En = true;
             else if (line == "dil=tr") Ui.En = false;
             else if (line == "tema=koyu") Ui.Th = Theme.MakeDark();
-            else if (line.StartsWith("seri_") && line.IndexOf('=') > 0) serIni[line.Substring(0, line.IndexOf('='))] = line.Substring(line.IndexOf('=') + 1);
+            else if (line.StartsWith("seri") && line.IndexOf('=') > 0) serIni[line.Substring(0, line.IndexOf('='))] = line.Substring(line.IndexOf('=') + 1);
         }
         SerialLoadSettings(serIni);
     }
@@ -674,7 +674,7 @@ partial class MainForm : Form
     {
         Log(Ui.S("Kayıt dosyası: ", "Recording file: ") + stem + ".csv");
         Log(Ui.S("Log dosyası: ", "Log file: ") + stem + "_log.txt");
-        if (File.Exists(stem + "_seri.txt")) Log(Ui.S("Seri port kaydı: ", "Serial record: ") + stem + "_seri.txt");
+        foreach (SerSession s in ses) if (File.Exists(stem + s.FileTag)) Log(Ui.S("Seri port kaydı: ", "Serial record: ") + stem + s.FileTag);
     }
 
     void SetLogFile(string path)
@@ -1432,7 +1432,7 @@ partial class MainForm : Form
                     double zl = za.AxisY.Minimum / lastK, zh = za.AxisY.Maximum / lastK, zc = (zl + zh) / 2;
                     yLo = zc - (zc - zl) * 0.36; yHi = zc + (zh - zc) * 0.36;
                 }
-                if (mode == "sersend") { txtSerSend.Text = "TEST:123"; SerialSend(); Application.DoEvents(); Thread.Sleep(400); RefreshUi(); }
+                if (mode == "sersend") { ses[0].Send.Text = "TEST:123"; SerialSend(ses[0]); Application.DoEvents(); Thread.Sleep(400); RefreshUi(); }
                 if (mode == "stop") { StopMeasure(); Application.DoEvents(); Thread.Sleep(600); Application.DoEvents(); } // durdurduktan sonraki olay listesi
                 if (mode == "clear") { testNoAsk = true; ClearChart(); Application.DoEvents(); Thread.Sleep(1200); Application.DoEvents(); }
                 RefreshUi();

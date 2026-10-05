@@ -33,6 +33,7 @@ Yeni bir marka eklemek için `cihaz.cs` içindeki `Dialect` sınıfına bir komu
 ScopeRec'in sağındaki **Seri port** paneli ayrı bir terminal programına gerek bırakmaz: Arduino, STM32, ESP32, CH340 gibi
 COM portundan veri gönderen cihazları ölçümle aynı pencerede izlersiniz.
 
+- Aynı anda 3 seri bağlantıya kadar: panelin üstündeki 1 / 2 / 3 sekmelerinin her biri ayrı bir port, ayrı terminal ve ayrı kayıt dosyasıdır (`_seri.txt`, `_seri2.txt`, `_seri3.txt`); 2. ve 3. bağlantının değerleri `T#2`, `T#3` gibi adlandırılır
 - Port ve baud hızı seçip **Bağlan**; gelen satırlar zaman damgasıyla listelenir, alttaki kutudan komut gönderilir (satır sonu seçilebilir)
 - Satırlardaki sayılar kendiliğinden ayıklanır: `SET:1500,ACT:1498,T:+45.3` → SET, ACT, T; `ad=değer` ve yalnızca sayılardan oluşan satırlar (S1, S2…) da tanınır
 - **Gelen değerler** listesinde işaretlenenler, osiloskop ölçümüyle aynı grafikte sağ eksende çizilir (aynı zaman ekseni)

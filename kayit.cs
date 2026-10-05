@@ -174,6 +174,13 @@ class Recording
     // Deger cok eskiyse (cihaz susmus) bos birakilir. Eklenen sutun sayisini dondurur.
     public int AddSerial(string path)
     {
+        // 2. ve 3. baglantinin dosyalari (_seri2.txt, _seri3.txt) ScopeRec'teki gibi "#2", "#3" ekiyle ayrilir
+        Match fm = Regex.Match(System.IO.Path.GetFileName(path), @"_seri(\d)\.txt$", RegexOptions.IgnoreCase);
+        return AddSerial(path, fm.Success ? "#" + fm.Groups[1].Value : "");
+    }
+
+    int AddSerial(string path, string tag)
+    {
         Dictionary<string, SerKey> keys = new Dictionary<string, SerKey>();
         List<double> times = new List<double>();
         DateTime clock; bool hasClock;
@@ -193,7 +200,7 @@ class Recording
                 while (j + 1 < k.T.Count && k.T[j + 1] <= t) j++;
                 v[i] = j >= 0 && t - k.T[j] <= stale ? k.V[j] : double.NaN;
             }
-            AddColumn(name + Ui.S(" (seri)", " (serial)"), v);
+            AddColumn(name + tag + Ui.S(" (seri)", " (serial)"), v);
         }
         return order.Count;
     }
@@ -230,7 +237,7 @@ class Recording
     public static bool IsSerialFile(string path)
     {
         string n = System.IO.Path.GetFileName(path).ToLowerInvariant();
-        return n.EndsWith("_seri.txt") || n.StartsWith("seri_");
+        return Regex.IsMatch(n, @"_seri\d?\.txt$") || n.StartsWith("seri_");
     }
 
     // Eski kayitlarda basliklarda birim yok; parametre adindan cikarilir
@@ -627,7 +634,8 @@ class ViewerForm : Form
     // Birakilan dosyalari turune gore ayirir; olcum dosyasi tek basina birakilirsa yanindaki log/olay dosyasi da acilir
     public void OpenFiles(string[] paths)
     {
-        string meas = null, serialFile = null;
+        string meas = null;
+        List<string> serialFiles = new List<string>();
         List<string> logs = new List<string>();
         List<string> problems = new List<string>();
         foreach (string p in paths)
@@ -636,7 +644,7 @@ class ViewerForm : Form
             {
                 string head;
                 using (StreamReader sr = new StreamReader(p, Encoding.UTF8)) head = sr.ReadLine() ?? "";
-                if (Recording.IsSerialFile(p)) serialFile = p;
+                if (Recording.IsSerialFile(p)) serialFiles.Add(p);
                 else if (Recording.LooksLikeMeasurement(head)) meas = p;
                 else logs.Add(p);
             }
@@ -651,8 +659,10 @@ class ViewerForm : Form
                 fileEvents.Clear(); calcEvents.Clear();
                 gapEvents = rec.FindGaps();
                 // yanindaki seri port kaydi da kendiliginden eklenir
-                string seri = Path.Combine(Path.GetDirectoryName(meas), Path.GetFileNameWithoutExtension(meas)) + "_seri.txt";
-                if (serialFile == null && File.Exists(seri)) serialFile = seri;
+                string seri = Path.Combine(Path.GetDirectoryName(meas), Path.GetFileNameWithoutExtension(meas)) + "_seri";
+                if (serialFiles.Count == 0)
+                    foreach (string tag in new string[] { "", "2", "3" }) // ScopeRec ayni anda 3 seri baglantiya kadar kaydeder
+                        if (File.Exists(seri + tag + ".txt")) serialFiles.Add(seri + tag + ".txt");
                 if (logs.Count == 0)
                 {
                     string stem = Path.Combine(Path.GetDirectoryName(meas), Path.GetFileNameWithoutExtension(meas));
@@ -661,18 +671,18 @@ class ViewerForm : Form
                     else if (File.Exists(stem + "_olaylar.csv")) logs.Add(stem + "_olaylar.csv");
                 }
             }
-            if (serialFile != null)
+            for (int si = 0; si < serialFiles.Count; si++)
             {
-                // olcum varsa seri degerler ona sutun olarak eklenir; yoksa seri kayit tek basina acilir
-                if (rec == null || (meas == null && Recording.IsSerialFile(rec.Path)))
+                string sf = serialFiles[si];
+                // olcum varsa seri degerler ona sutun olarak eklenir; yoksa ilk seri kayit tek basina acilir, digerleri ona eklenir
+                if (rec == null || (si == 0 && meas == null && Recording.IsSerialFile(rec.Path)))
                 {
                     Cursor = Cursors.WaitCursor;
-                    rec = Recording.FromSerial(serialFile);
+                    rec = Recording.FromSerial(sf);
                     fileEvents.Clear(); calcEvents.Clear();
                     gapEvents = rec.FindGaps();
-                    serialFile = null;
                 }
-                else if (rec.AddSerial(serialFile) == 0) problems.Add(Ui.S("Seri kayıtta sayısal değer bulunamadı: ", "No numeric values in the serial record: ") + Path.GetFileName(serialFile));
+                else if (rec.AddSerial(sf) == 0) problems.Add(Ui.S("Seri kayıtta sayısal değer bulunamadı: ", "No numeric values in the serial record: ") + Path.GetFileName(sf));
             }
             foreach (string l in logs)
             {
@@ -692,7 +702,7 @@ class ViewerForm : Form
         {
             string names = Path.GetFileName(rec.Path);
             foreach (string l in logs) names += "   +   " + Path.GetFileName(l);
-            if (serialFile != null) names += "   +   " + Path.GetFileName(serialFile);
+            foreach (string sf in serialFiles) if (sf != rec.Path) names += "   +   " + Path.GetFileName(sf);
             Text = "ScopeView – " + names;
         }
     }
