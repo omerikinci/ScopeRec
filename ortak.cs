@@ -141,3 +141,28 @@ static class HoverTip
         l.Visible = true;
     }
 }
+
+// Iki bolme arasindaki surukleme cubugu: tema rengiyle boyanir ve ortasinda tutamak noktalari olur ki yeri gorulsun
+class GripSplitter : Splitter
+{
+    public GripSplitter(DockStyle dock)
+    {
+        Dock = dock;
+        if (dock == DockStyle.Left || dock == DockStyle.Right) Width = 7; else Height = 7;
+        BackColor = Ui.Th.Border;
+        SetStyle(ControlStyles.ResizeRedraw, true);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        bool vertical = Width < Height;
+        using (SolidBrush b = new SolidBrush(Ui.Th.Dark ? Color.FromArgb(200, 204, 210) : Color.FromArgb(90, 94, 100)))
+            for (int i = -2; i <= 2; i++)
+            {
+                int x = vertical ? Width / 2 - 1 : Width / 2 - 1 + i * 8;
+                int y = vertical ? Height / 2 - 1 + i * 8 : Height / 2 - 1;
+                e.Graphics.FillRectangle(b, x, y, 3, 3);
+            }
+    }
+}

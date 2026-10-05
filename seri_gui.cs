@@ -96,8 +96,8 @@ partial class MainForm
         }
 
         serPanel.Dock = DockStyle.Right;
-        serSplit = new Splitter();
-        serSplit.Dock = DockStyle.Right; serSplit.Width = 5; serSplit.MinSize = 390; serSplit.MinExtra = 300;
+        serSplit = new GripSplitter(DockStyle.Right);
+        serSplit.MinSize = 390; serSplit.MinExtra = 300;
         serSplit.SplitterMoved += delegate { serWidth = serPanel.Width; };
         serPanel.Visible = serSplit.Visible = serPanelOn;
         // ayirici panelden once eklenir ki panelin solunda yer alsin (Dock: son eklenen once yerlesir)
@@ -134,9 +134,11 @@ partial class MainForm
         s.CmbPort = new ComboBox(); // elle de yazilabilir: COM adi ya da tcp://adres:port
         s.CmbPort.SetBounds(8, 4, w - 150, 24); s.CmbPort.Anchor = topWide; s.CmbPort.Text = s.Port;
         s.CmbPort.DropDown += delegate { FillPorts(s); };
+        NoStickySelection(s.CmbPort);
         s.CmbBaud = new ComboBox();
         s.CmbBaud.Items.AddRange(new object[] { "1200", "2400", "4800", "9600", "19200", "38400", "57600", "74880", "115200", "230400", "250000", "460800", "500000", "921600", "1000000", "2000000" });
         s.CmbBaud.Text = s.Baud; s.CmbBaud.SetBounds(w - 136, 4, 128, 24); s.CmbBaud.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        NoStickySelection(s.CmbBaud);
 
         s.Conn = new Button();
         s.Conn.SetBounds(8, 34, 110, 28);
@@ -233,6 +235,19 @@ partial class MainForm
     {
         if (name.StartsWith("tcp://", StringComparison.OrdinalIgnoreCase)) name = name.Substring(6);
         return name.Length > 12 ? name.Substring(0, 11) + "…" : name;
+    }
+
+    // Yazilabilir acilir liste, boyutu degisince ya da gorunur olunca metnini kendiliginden seciyor (mavi kaliyor);
+    // odak kutuda degilken secimi kaldirir.
+    static void NoStickySelection(ComboBox c)
+    {
+        EventHandler clear = delegate
+        {
+            if (!c.IsHandleCreated || c.IsDisposed) return;
+            c.BeginInvoke(new MethodInvoker(delegate { if (!c.IsDisposed && !c.Focused) c.SelectionLength = 0; }));
+        };
+        c.Resize += clear; c.VisibleChanged += clear; c.HandleCreated += clear; c.Leave += clear;
+        c.EnabledChanged += clear; c.TextChanged += clear;
     }
 
     void SerialTheme()

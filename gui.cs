@@ -105,6 +105,7 @@ partial class MainForm : Form
 
     // arayuz
     Button btnStart, btnEnd, btnFolder, btnShot, btnReset, btnDefaults;
+    int logHeight = 150;        // olay listesinin yuksekligi (suruklenerek degisir)
     bool testActive;            // bir test acik (olcuyor ya da duraklatilmis); "Testi bitir" ile kapanir
     volatile string testStem;   // acik testin kayit dosyalarinin kok adi (kayit yoksa null)
     CheckBox chkRecord, chkAlarm, chkBeep;
@@ -177,12 +178,11 @@ partial class MainForm : Form
     {
         TableLayoutPanel main = new TableLayoutPanel();
         main.Dock = DockStyle.Fill;
-        main.ColumnCount = 1; main.RowCount = 5;
+        main.ColumnCount = 1; main.RowCount = 4;
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 124));
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
         main.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
-        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
         main.Padding = new Padding(4);
 
         cards = new FlowLayoutPanel();
@@ -243,7 +243,18 @@ partial class MainForm : Form
 
         lstLog = new ListBox();
         lstLog.Dock = DockStyle.Fill; lstLog.IntegralHeight = false; lstLog.HorizontalScrollbar = true;
-        main.Controls.Add(lstLog, 0, 4);
+        // Olay listesi grafigin altinda ayri bir bolmede; aradaki cubukla yuksekligi degisir
+        Panel logHost = new Panel();
+        logHost.Dock = DockStyle.Bottom; logHost.Height = logHeight; logHost.Padding = new Padding(4, 0, 4, 4);
+        logHost.Controls.Add(lstLog);
+        GripSplitter logSplit = new GripSplitter(DockStyle.Bottom);
+        logSplit.MinSize = 60; logSplit.MinExtra = 220;
+        logSplit.SplitterMoved += delegate { logHeight = logHost.Height; };
+        Panel center = new Panel();
+        center.Dock = DockStyle.Fill;
+        center.Controls.Add(main);      // Dock: son eklenen once yerlesir
+        center.Controls.Add(logSplit);
+        center.Controls.Add(logHost);
 
         // sol panel
         Panel left = new Panel();
@@ -364,7 +375,7 @@ partial class MainForm : Form
         st.Items.AddRange(new ToolStripItem[] { stState, stCount, stRate, stTime, stAlarm, stFile });
 
         // Dock sirasi: son eklenen once yerlesir
-        Controls.Add(main);
+        Controls.Add(center);
         BuildSerialPanel();
         Controls.Add(left);
         Controls.Add(top);
@@ -450,8 +461,9 @@ partial class MainForm : Form
                     {
                         // gorsel stil arka plan rengini yok saydigi icin duz stil + kendi cizimimiz
                         ComboBox cb = (ComboBox)c;
-                        cb.FlatStyle = FlatStyle.Flat; cb.DrawMode = DrawMode.OwnerDrawFixed;
-                        cb.DrawItem += DrawComboItem;
+                        cb.FlatStyle = FlatStyle.Flat;
+                        // yazilabilir listede kendi cizim kipi yazi kutusunu beyaz birakiyor; yalnizca secmeli listelerde kullanilir
+                        if (cb.DropDownStyle == ComboBoxStyle.DropDownList) { cb.DrawMode = DrawMode.OwnerDrawFixed; cb.DrawItem += DrawComboItem; }
                     }
                     if (c is TextBox) ((TextBox)c).BorderStyle = BorderStyle.FixedSingle;
                     if (c is ListBox) { ((ListBox)c).BorderStyle = BorderStyle.FixedSingle; try { SetWindowTheme(c.Handle, "DarkMode_Explorer", null); } catch (Exception) { } }
@@ -603,6 +615,7 @@ partial class MainForm : Form
             if (line == "dil=en") Ui.En = true;
             else if (line == "dil=tr") Ui.En = false;
             else if (line == "tema=koyu") Ui.Th = Theme.MakeDark();
+            else if (line.StartsWith("olay_yukseklik=")) { int lh; if (int.TryParse(line.Substring(15), out lh)) logHeight = Math.Max(60, Math.Min(600, lh)); }
             else if (line.StartsWith("seri") && line.IndexOf('=') > 0) serIni[line.Substring(0, line.IndexOf('='))] = line.Substring(line.IndexOf('=') + 1);
         }
         SerialLoadSettings(serIni);
@@ -1385,6 +1398,7 @@ partial class MainForm : Form
                 "baglanti=" + (cmbConn.SelectedIndex == 1 ? "ag" : "usb"),
                 "adres=" + txtAddr.Text.Trim(),
                 "komut_seti=" + cmbDialect.SelectedIndex,
+                "olay_yukseklik=" + logHeight,
                 "kayit_yeri=" + recBase,
                 "kayit_klasoru=" + recName,
                 "dil=" + (Ui.En ? "en" : "tr"),
