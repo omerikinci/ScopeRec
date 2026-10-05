@@ -19,6 +19,8 @@ class SerialLink : IDisposable
     Stream stream;
     Thread reader;
     volatile bool closing;
+    public int ReadErrors; // toparlanan hat hatasi sayisi
+    int readOk;
     Action<string> onLine, onClosed;
     public string Name;
 
@@ -42,7 +44,7 @@ class SerialLink : IDisposable
         {
             SerialPort p = new SerialPort(name, baud, Parity.None, 8, StopBits.One);
             p.DtrEnable = dtr; p.RtsEnable = rts;
-            p.ReadTimeout = SerialPort.InfiniteTimeout; p.WriteTimeout = 2000;
+            p.ReadTimeout = 500; p.WriteTimeout = 2000;
             p.Open();
             // USB-seri donusturucu calisirken cekilirse .NET'in sonlandiricisi islenmeyen istisnayla uygulamayi cokertiyor
             GC.SuppressFinalize(p.BaseStream);
@@ -59,12 +61,42 @@ class SerialLink : IDisposable
         byte[] buf = new byte[4096];
         StringBuilder sb = new StringBuilder();
         bool lastCr = false;
+        int lastByte = Environment.TickCount;
         string reason = null;
         try
         {
             while (!closing)
             {
-                int n = stream.Read(buf, 0, buf.Length);
+                int n;
+                if (port != null)
+                {
+                    // Seri portta bekleyen (bloklayan) okuma kullanilmaz: CH340 ile denendiginde surucu bekleyen okumayi surekli
+                    // "islem durduruldu" diye iptal ediyordu. Bunun yerine gelen bayt var mi diye bakilir, varsa okunur.
+                    try
+                    {
+                        int avail = port.BytesToRead;
+                        if (avail == 0)
+                        {
+                            // Satir sonu gelmeden duran veri (komut istemi, ya da yanlis baud hizinda gelen anlamsiz baytlar)
+                            // 300 ms sonra oldugu gibi gosterilir; yoksa kullanici hicbir sey gelmiyor sanar
+                            if (sb.Length > 0 && Environment.TickCount - lastByte > 300) { onLine(sb.ToString()); sb.Length = 0; }
+                            Thread.Sleep(5);
+                            continue;
+                        }
+                        lastByte = Environment.TickCount;
+                        n = port.Read(buf, 0, Math.Min(avail, buf.Length));
+                    }
+                    catch (TimeoutException) { continue; }
+                    catch (IOException)
+                    {
+                        // hat hatasi (cerceve/tasma, yanlis baud): port hala aciksa kopma degildir
+                        if (closing || !port.IsOpen || ++ReadErrors - readOk > 500) throw;
+                        Thread.Sleep(10);
+                        continue;
+                    }
+                    readOk = ReadErrors; // basarili okuma: art arda hata sayaci sifirlanir
+                }
+                else n = stream.Read(buf, 0, buf.Length);
                 if (n <= 0) { if (tcp != null) break; continue; }
                 for (int i = 0; i < n; i++)
                 {
