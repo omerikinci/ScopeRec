@@ -119,8 +119,6 @@ partial class MainForm : Form
     TextBox txtLow, txtHigh, txtAddr;
     Label lblLow, lblHigh, lblDevice;
     FlowLayoutPanel cards;
-    LogoBox logoBox;
-    Panel cardRow;
     Chart chart;
     HScrollBar scroll;
     Label lblHistory;
@@ -189,15 +187,7 @@ partial class MainForm : Form
 
         cards = new FlowLayoutPanel();
         cards.Dock = DockStyle.Fill; cards.AutoScroll = true;
-        // Deger kutulari satirinin sag ucunda yazili logo; kutular sigmayacak kadar cogalirsa gizlenir
-        cardRow = new Panel();
-        cardRow.Dock = DockStyle.Fill; cardRow.Margin = new Padding(0);
-        logoBox = new LogoBox();
-        logoBox.Dock = DockStyle.Right; logoBox.Width = 300; logoBox.Padding = new Padding(4);
-        cardRow.Controls.Add(cards);     // Dock: son eklenen once yerlesir
-        cardRow.Controls.Add(logoBox);
-        cardRow.Resize += delegate { FitLogo(); };
-        main.Controls.Add(cardRow, 0, 0);
+        main.Controls.Add(cards, 0, 0);
 
         FlowLayoutPanel bar = new FlowLayoutPanel();
         bar.Dock = DockStyle.Fill; bar.WrapContents = false; // dar pencerede alt satira kayip gorunmez olmasin
@@ -817,13 +807,6 @@ partial class MainForm : Form
         SetStartButton();
     }
 
-    void FitLogo()
-    {
-        if (logoBox == null || cardRow == null) return;
-        int n = cards.Controls.Count;
-        logoBox.Visible = cardRow.Width - 300 >= Math.Max(1, n) * 214; // her deger kutusu 206 + bosluk
-    }
-
     void BuildCards()
     {
         cards.SuspendLayout();
@@ -852,7 +835,6 @@ partial class MainForm : Form
             cardPanel[i] = p; cardValue[i] = val; cardStat[i] = stat;
         }
         cards.ResumeLayout();
-        FitLogo();
     }
 
     // ---------------------------------------------------------------- olcum is parcacigi
