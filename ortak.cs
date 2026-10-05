@@ -166,3 +166,50 @@ class GripSplitter : Splitter
             }
     }
 }
+
+// Yazili logo: exe'ye gomulu gorseli, kendi koyu zemini uzerinde yuvarlak koseli bir rozet olarak cizer (iki temada da ayni)
+class LogoBox : Control
+{
+    static Image logo;
+    static bool tried;
+
+    public LogoBox()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        if (!tried)
+        {
+            tried = true;
+            try
+            {
+                System.IO.Stream s = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("logo.png");
+                if (s != null) logo = Image.FromStream(s);
+            }
+            catch (Exception) { } // gorsel yoksa kutu bos kalir
+        }
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        Graphics g = e.Graphics;
+        g.Clear(Parent != null ? Parent.BackColor : Ui.Th.Back);
+        if (logo == null || Width < 20 || Height < 20) return;
+        // gorselin en-boy oranini koruyarak kutuya sigdir
+        double k = Math.Min((double)Width / logo.Width, (double)Height / logo.Height);
+        int w = (int)(logo.Width * k), h = (int)(logo.Height * k);
+        Rectangle r = new Rectangle((Width - w) / 2, (Height - h) / 2, w, h);
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+        g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+        int rad = Math.Max(4, h / 7);
+        using (System.Drawing.Drawing2D.GraphicsPath p = new System.Drawing.Drawing2D.GraphicsPath())
+        {
+            p.AddArc(r.X, r.Y, 2 * rad, 2 * rad, 180, 90); p.AddArc(r.Right - 2 * rad - 1, r.Y, 2 * rad, 2 * rad, 270, 90);
+            p.AddArc(r.Right - 2 * rad - 1, r.Bottom - 2 * rad - 1, 2 * rad, 2 * rad, 0, 90); p.AddArc(r.X, r.Bottom - 2 * rad - 1, 2 * rad, 2 * rad, 90, 90);
+            p.CloseFigure();
+            g.SetClip(p);
+            g.DrawImage(logo, r);
+            g.ResetClip();
+            using (Pen pen = new Pen(Ui.Th.Border)) g.DrawPath(pen, p);
+        }
+    }
+}
