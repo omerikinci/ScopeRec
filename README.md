@@ -1,3 +1,5 @@
+<p align="center"><img src="logo/scoperec-logo.png" alt="ScopeRec" width="720"></p>
+
 # ScopeRec
 
 Osiloskoptan USB ya da ağ üzerinden sürekli ölçüm okuyan Windows uygulaması.
