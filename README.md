@@ -26,11 +26,11 @@ Yeni bir marka eklemek için `cihaz.cs` içindeki `Dialect` sınıfına bir komu
 - Canlı değer kutuları (min / maks / ortalama) ve canlı grafik (30 sn – 3 gün arası zaman aralığı; veri pencereden uzunsa alttaki çubukla geçmişte gezilir)
 - Limit kontrolü: değer alt/üst limitin dışına çıkınca uyarır, olayı saatiyle ve süresiyle kaydeder
 - CSV kaydı (varsayılan `kayitlar` klasörüne; **Kayıt yeri…** ile konum ve klasör adı test başlamadan seçilebilir)
-- Osiloskop ekran görüntüsü alma (yalnızca Siglent)
+- **Osiloskop ekranını kaydet**: osiloskobun kendi ekranındaki görüntüyü resim olarak kaydeder (yalnızca Siglent)
 - Türkçe / İngilizce arayüz ve açık / koyu tema (üst çubuktaki listelerden)
 - Grafiği temizleme (onay sorar; CSV kayıtlarına dokunmaz) ve tüm ayarları varsayılana döndürme
 - Grafikte fare tekerleğiyle zamanda, Ctrl+tekerlekle değer ekseninde yakınlaştırma; çift tık sıfırlar. Fare altındaki anın değeri imlecin yanında görünür
-- **Test adı**: olay listesinin üstündeki kutuya yazılan ad kayıt dosyalarının başına eklenir (`TEST7 15A_<tarih>.csv`)
+- **Test adı**: üst çubukta, Kayıt yeri düğmesinin yanındaki kutuya yazılan ad kayıt dosyalarının başına eklenir (`TEST7 15A_<tarih>.csv`)
 - **İşaret koy**: o ana notuyla işaret bırakır; olay listesine ve log dosyasına yazılır, grafikte dikey çizgi olur, ScopeView'da olay olarak görünür
 - **Test özeti**: test bitince süre, okuma sayısı, limit dışı sayısı ve her değerin min / maks / ortalaması olay listesine ve log dosyasına yazılır
 - **Resim kaydet**: grafiği PNG olarak kayıt klasörüne kaydeder (ScopeView'da da var); **ScopeView ile aç** son kaydı görüntüleyicide açar

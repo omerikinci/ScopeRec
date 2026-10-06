@@ -346,27 +346,44 @@ partial class MainForm : Form
         btnEnd = new Button();
         btnEnd.Text = Ui.S("■  Testi bitir", "■  End test"); btnEnd.SetBounds(146, 9, 104, 40);
         btnEnd.Click += delegate { EndTest(true); };
-        chkRecord.SetBounds(262, 19, 160, 22);
+        // kayit grubu: kaydet kutusu, test adi (dosya adinin basina gelir) ve kayit yeri yan yana
+        chkRecord.SetBounds(262, 19, 146, 22);
         chkRecord.CheckedChanged += delegate { wantRecord = chkRecord.Checked; };
-        btnFolder = MakeButton(Ui.S("Kayıt yeri…", "Record to…"), 426, delegate { RecordSettings(); });
-        btnShot = MakeButton(Ui.S("Ekran görüntüsü al", "Take screenshot"), 542, delegate { TakeShot(); });
-        btnShot.Width = 130;
-        btnReset = MakeButton(Ui.S("İstatistiği sıfırla", "Reset statistics"), 678, delegate { lock (lk) { foreach (SeriesData s in series) s.ResetStats(); violations = 0; } });
-        btnReset.Width = 120;
+        Label lName = new Label(); lName.Text = Ui.S("Test adı:", "Test name:"); lName.SetBounds(410, 21, 62, 18);
+        txtTestName = new TextBox(); txtTestName.Text = testName; txtTestName.SetBounds(474, 17, 140, 24);
+        txtTestName.TextChanged += delegate { testName = txtTestName.Text.Trim(); };
+        btnFolder = MakeButton(Ui.S("Kayıt yeri…", "Record to…"), 620, delegate { RecordSettings(); });
+        btnFolder.Width = 96;
+        btnShot = MakeButton(Ui.S("Osiloskop ekranını kaydet", "Save scope screen"), 730, delegate { TakeShot(); });
+        btnShot.Width = 170;
+        btnReset = MakeButton(Ui.S("İstatistiği sıfırla", "Reset statistics"), 906, delegate { lock (lk) { foreach (SeriesData s in series) s.ResetStats(); violations = 0; } });
+        btnReset.Width = 116;
+        tips = new ToolTip();
+        tips.AutoPopDelay = 12000;
+        tips.SetToolTip(btnShot, Ui.S("Osiloskobun kendi ekranında o an görünen görüntüyü (dalga şekli, ölçümler, menüler)\nresim dosyası olarak kayıt klasörüne kaydeder. Yalnızca Siglent osiloskoplarda çalışır.",
+                                      "Saves what is currently shown on the oscilloscope's own screen (waveform, measurements, menus)\nas an image file in the record folder. Works on Siglent oscilloscopes only."));
+        tips.SetToolTip(txtTestName, Ui.S("Kayıt dosyalarının adının başına eklenir. Örnek: TEST7 15A  →  TEST7 15A_<tarih>.csv",
+                                          "Prefixed to the record file names. Example: TEST7 15A  →  TEST7 15A_<date>.csv"));
+        tips.SetToolTip(btnFolder, Ui.S("Kayıt dosyalarının yazılacağı konumu ve klasör adını seçer", "Chooses where the record files are written"));
+        tips.SetToolTip(btnReset, Ui.S("Değer kutularındaki min / maks / ortalama ve limit dışı sayacını sıfırlar; grafik ve kayıt etkilenmez",
+                                       "Resets min / max / mean in the value boxes and the out-of-limit counter; chart and records are not affected"));
+        tips.SetToolTip(btnEnd, Ui.S("Testi kapatır ve kayıt dosyalarını tamamlar. Sonraki Başlat sıfırdan yeni bir testtir.",
+                                     "Closes the test and finalises the record files. The next Start is a new test from zero."));
+        tips.SetToolTip(chkRecord, Ui.S("İşaretliyken ölçümler CSV dosyasına, olaylar log dosyasına yazılır", "When checked, measurements go to a CSV file and events to a log file"));
         lblDevice = new Label();
-        lblDevice.Dock = DockStyle.Right; lblDevice.Width = 270;
+        lblDevice.Dock = DockStyle.Right; lblDevice.Width = 250;
         lblDevice.Padding = new Padding(0, 0, 10, 0);
         lblDevice.TextAlign = ContentAlignment.MiddleRight;
         // dil ve tema: degisince arayuz bastan kurulur (olcum surerken kilitli)
         cmbLang = MakeCombo(78); cmbLang.Items.AddRange(new object[] { "Türkçe", "English" });
         cmbLang.SelectedIndex = Ui.En ? 1 : 0;
-        cmbLang.SetBounds(810, 17, 78, 24);
+        cmbLang.SetBounds(1034, 17, 78, 24);
         cmbLang.SelectedIndexChanged += delegate { Ui.En = cmbLang.SelectedIndex == 1; BeginInvoke(new MethodInvoker(Rebuild)); };
         cmbTheme = MakeCombo(74); cmbTheme.Items.AddRange(new object[] { Ui.S("Açık", "Light"), Ui.S("Koyu", "Dark") });
         cmbTheme.SelectedIndex = Ui.Th.Dark ? 1 : 0;
-        cmbTheme.SetBounds(894, 17, 74, 24);
+        cmbTheme.SetBounds(1118, 17, 74, 24);
         cmbTheme.SelectedIndexChanged += delegate { Ui.Th = cmbTheme.SelectedIndex == 1 ? Theme.MakeDark() : Theme.Light(); BeginInvoke(new MethodInvoker(Rebuild)); };
-        top.Controls.AddRange(new Control[] { btnStart, btnEnd, chkRecord, btnFolder, btnShot, btnReset, cmbLang, cmbTheme, lblDevice });
+        top.Controls.AddRange(new Control[] { btnStart, btnEnd, chkRecord, lName, txtTestName, btnFolder, btnShot, btnReset, cmbLang, cmbTheme, lblDevice });
         topBar = top;
 
         StatusStrip st = new StatusStrip();
@@ -532,7 +549,7 @@ partial class MainForm : Form
             btnOpenDir.Click += delegate
             {
                 try { Directory.CreateDirectory(RecDir); Process.Start(RecDir); }
-                catch (Exception e) { MessageBox.Show(f, e.Message, f.Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+                catch (Exception e) { Msg.Info(f, e.Message, f.Text); }
             };
             ok.Click += delegate
             {
@@ -546,7 +563,7 @@ partial class MainForm : Form
                     try { Directory.CreateDirectory(Path.Combine(b, n)); }
                     catch (Exception e) { problem = Ui.S("Klasör oluşturulamadı: ", "Could not create the folder: ") + e.Message; }
                 }
-                if (problem != null) { MessageBox.Show(f, problem, f.Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+                if (problem != null) { Msg.Info(f, problem, f.Text); return; }
                 recBase = b; recName = n;
                 SaveSettings();
                 f.DialogResult = DialogResult.OK;
@@ -558,6 +575,7 @@ partial class MainForm : Form
     // ---------------------------------------------------------------- test araclari: ad, isaret, ozet, resim, goruntuleyici
 
     TextBox txtTestName, txtMark;
+    ToolTip tips;
     string testName = "";                                   // kayit dosyalarinin basina eklenir
     string lastStem;                                        // en son kaydin kok adi (ScopeView dugmesi icin)
     readonly List<double> marks = new List<double>();       // isaret zamanlari (grafikte dikey cizgi; kilit: lk)
@@ -566,22 +584,19 @@ partial class MainForm : Form
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     static extern uint SetThreadExecutionState(uint flags);
 
-    // Olay listesinin ustundeki satir: test adi, isaret notu, ScopeView
+    // Olay listesinin ustundeki satir: isaret notu, ScopeView
     Panel BuildTestRow()
     {
         Panel row = new Panel();
         row.Dock = DockStyle.Top; row.Height = 32;
-        Label l1 = new Label(); l1.Text = Ui.S("Test adı:", "Test name:"); l1.SetBounds(0, 8, 66, 18);
-        txtTestName = new TextBox(); txtTestName.Text = testName; txtTestName.SetBounds(68, 4, 150, 24);
-        txtTestName.TextChanged += delegate { testName = txtTestName.Text.Trim(); };
-        Label l2 = new Label(); l2.Text = Ui.S("İşaret:", "Mark:"); l2.SetBounds(230, 8, 44, 18);
-        txtMark = new TextBox(); txtMark.SetBounds(276, 4, 220, 24);
+        Label l2 = new Label(); l2.Text = Ui.S("İşaret notu:", "Mark note:"); l2.SetBounds(0, 8, 72, 18);
+        txtMark = new TextBox(); txtMark.SetBounds(74, 4, 260, 24);
         txtMark.KeyDown += delegate(object s, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; AddMark(); } };
-        Button btnMark = new Button(); btnMark.Text = Ui.S("İşaret koy", "Add mark"); btnMark.SetBounds(502, 2, 90, 28);
+        Button btnMark = new Button(); btnMark.Text = Ui.S("İşaret koy", "Add mark"); btnMark.SetBounds(340, 2, 90, 28);
         btnMark.Click += delegate { AddMark(); };
-        Button btnView = new Button(); btnView.Text = Ui.S("ScopeView ile aç", "Open in ScopeView"); btnView.SetBounds(604, 2, 130, 28);
+        Button btnView = new Button(); btnView.Text = Ui.S("ScopeView ile aç", "Open in ScopeView"); btnView.SetBounds(442, 2, 130, 28);
         btnView.Click += delegate { OpenInViewer(); };
-        row.Controls.AddRange(new Control[] { l1, txtTestName, l2, txtMark, btnMark, btnView });
+        row.Controls.AddRange(new Control[] { l2, txtMark, btnMark, btnView });
         return row;
     }
 
@@ -682,17 +697,19 @@ partial class MainForm : Form
     // Evet / Hayir onayi; varsayilan dugme Hayir
     bool Confirm(string question)
     {
-        return testNoAsk || MessageBox.Show(this, question, Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+        return testNoAsk || Msg.Ask(this, question, Text);
     }
 
     // Grafikte ve bellekte biriken olcum gecmisini siler; CSV kaydina dokunmaz, olcum suruyorsa devam eder
     void ClearChart()
     {
-        if (!Confirm(Ui.S("Tüm grafik silinecektir. Devam edilsin mi?\n\n(CSV dosyasına yazılmış kayıtlar silinmez.)",
-                          "The whole chart will be cleared. Continue?\n\n(Recordings already written to CSV are not deleted.)"))) return;
+        if (!Confirm(Ui.S("Tüm grafik ve alttaki olay listesi silinecektir. Devam edilsin mi?\n\n(Dosyalara yazılmış kayıtlar silinmez.)",
+                          "The whole chart and the event list below will be cleared. Continue?\n\n(Records already written to files are not deleted.)"))) return;
         lock (lk) { foreach (SeriesData s in series) { s.T.Clear(); s.V.Clear(); s.ResetStats(); } }
         ClearSerialSeries();
         lock (lk) marks.Clear();
+        lock (logQueue) logQueue.Clear();
+        lstLog.Items.Clear(); // ekrandaki olay listesi; log dosyasina yazilanlar durur
         follow = true;
     }
 
@@ -845,14 +862,14 @@ partial class MainForm : Form
         Config c = ReadConn();
         if (c.Lan && c.Addr.Length == 0)
         {
-            MessageBox.Show(this, Ui.S("Ağ bağlantısı için osiloskobun IP adresini girin.", "Enter the oscilloscope's IP address for the LAN connection."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            Msg.Info(this, Ui.S("Ağ bağlantısı için osiloskobun IP adresini girin.", "Enter the oscilloscope's IP address for the LAN connection."), Text);
             return;
         }
         for (int i = 0; i < 4; i++) if (chkChan[i].Checked) c.Chans.Add(Chans[i]);
         foreach (object o in lstParams.CheckedItems) c.Params.Add((ParamInfo)o);
         if (c.Chans.Count == 0 || c.Params.Count == 0)
         {
-            MessageBox.Show(this, Ui.S("En az bir kanal ve bir parametre seçin.", "Select at least one channel and one parameter."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            Msg.Info(this, Ui.S("En az bir kanal ve bir parametre seçin.", "Select at least one channel and one parameter."), Text);
             return;
         }
         c.Interval = (int)numInterval.Value;
@@ -866,8 +883,8 @@ partial class MainForm : Form
             c.AlarmIdx = list.FindIndex(delegate(SeriesData s) { return s.Key == key; });
             if (c.AlarmIdx < 0 || (double.IsNaN(c.Low) && double.IsNaN(c.High)))
             {
-                MessageBox.Show(this, Ui.S("Limit kontrolü için seçilen kanal ve parametre ölçülenler arasında olmalı ve en az bir limit girilmeli.", "The channel and parameter chosen for the limit check must be among the measured ones, and at least one limit must be entered."),
-                    Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Msg.Info(this, Ui.S("Limit kontrolü için seçilen kanal ve parametre ölçülenler arasında olmalı ve en az bir limit girilmeli.", "The channel and parameter chosen for the limit check must be among the measured ones, and at least one limit must be entered."),
+                    Text);
                 return;
             }
         }
@@ -1600,6 +1617,29 @@ partial class MainForm : Form
         testNoAsk = true; // kapatma ve diger onaylar test sirasinda sorulmaz
         Shown += delegate
         {
+            if (mode == "msg")
+            {
+                // Onay penceresinin goruntusunu al: olcumu baslat, "Testi bitir" sorusunu ac, pencereyi yakalayip Hayir ile kapat
+                StartMeasure();
+                System.Windows.Forms.Timer mt = new System.Windows.Forms.Timer();
+                mt.Interval = 1500;
+                mt.Tick += delegate
+                {
+                    mt.Stop();
+                    Form d = Application.OpenForms[Application.OpenForms.Count - 1];
+                    d.Refresh(); Application.DoEvents(); Thread.Sleep(300);
+                    using (Bitmap b = new Bitmap(d.Width, d.Height))
+                    {
+                        using (Graphics g = Graphics.FromImage(b)) g.CopyFromScreen(d.Location, Point.Empty, d.Size);
+                        b.Save(png);
+                    }
+                    d.Close(); testNoAsk = true; Close();
+                };
+                mt.Start();
+                testNoAsk = false;
+                EndTest(true);
+                return;
+            }
             if (mode == "recdlg")
             {
                 // Kayit yeri penceresini acip goruntusunu al (pencere kipli oldugu icin zamanlayici onu disaridan yakalar)

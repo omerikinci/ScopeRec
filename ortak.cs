@@ -1,5 +1,6 @@
 // Iki uygulamanin (ScopeRec, ScopeView) ortak kullandigi dil, tema ve sayi bicimlendirme kodu.
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.Windows.Forms;
@@ -164,5 +165,63 @@ class GripSplitter : Splitter
                 int y = vertical ? Height / 2 - 1 + i * 8 : Height / 2 - 1;
                 e.Graphics.FillRectangle(b, x, y, 3, 3);
             }
+    }
+}
+
+// Uygulamanin kendi mesaj penceresi: temaya uyar (koyu temada koyu) ve Windows uyari sesi cikarmaz
+static class Msg
+{
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+    // Evet / Hayir sorusu; varsayilan dugme Hayir
+    public static bool Ask(IWin32Window owner, string text, string title) { return Show(owner, text, title, true) == DialogResult.Yes; }
+
+    public static void Info(IWin32Window owner, string text, string title) { Show(owner, text, title, false); }
+
+    static DialogResult Show(IWin32Window owner, string text, string title, bool yesNo)
+    {
+        Theme t = Ui.Th;
+        using (Form f = new Form())
+        {
+            f.Text = title; f.Font = new Font("Segoe UI", 9.5f);
+            f.FormBorderStyle = FormBorderStyle.FixedDialog; f.MaximizeBox = false; f.MinimizeBox = false; f.ShowInTaskbar = false; f.ShowIcon = false;
+            f.StartPosition = owner != null ? FormStartPosition.CenterParent : FormStartPosition.CenterScreen;
+            f.BackColor = t.Back; f.ForeColor = t.Text;
+            f.HandleCreated += delegate { int on = t.Dark ? 1 : 0; try { DwmSetWindowAttribute(f.Handle, 20, ref on, 4); } catch (Exception) { } };
+
+            Label l = new Label();
+            l.AutoSize = true; l.MaximumSize = new Size(460, 0); l.Text = text; l.Location = new Point(22, 22);
+            f.Controls.Add(l);
+            Size ts = l.GetPreferredSize(new Size(460, 0));
+            int w = Math.Max(yesNo ? 300 : 240, ts.Width + 44), y = ts.Height + 44;
+
+            Panel bar = new Panel();
+            bar.BackColor = t.Bar; bar.SetBounds(0, y, w, 56);
+            f.Controls.Add(bar);
+            List<Button> buttons = new List<Button>();
+            if (yesNo)
+            {
+                buttons.Add(MakeButton(Ui.S("Evet", "Yes"), DialogResult.Yes));
+                buttons.Add(MakeButton(Ui.S("Hayır", "No"), DialogResult.No));
+            }
+            else buttons.Add(MakeButton(Ui.S("Tamam", "OK"), DialogResult.OK));
+            int x = w - 16;
+            for (int i = buttons.Count - 1; i >= 0; i--) { x -= 96; buttons[i].SetBounds(x, 13, 90, 30); bar.Controls.Add(buttons[i]); x -= 6; }
+            foreach (Button b in buttons)
+                if (t.Dark) { b.FlatStyle = FlatStyle.Flat; b.BackColor = t.Input; b.ForeColor = t.Text; b.FlatAppearance.BorderColor = t.Border; }
+            Button def = buttons[buttons.Count - 1]; // soruda Hayir, bilgide Tamam
+            f.AcceptButton = def; f.CancelButton = def;
+            f.ClientSize = new Size(w, y + 56);
+            f.Shown += delegate { def.Focus(); };
+            return owner != null ? f.ShowDialog(owner) : f.ShowDialog();
+        }
+    }
+
+    static Button MakeButton(string text, DialogResult result)
+    {
+        Button b = new Button();
+        b.Text = text; b.DialogResult = result;
+        return b;
     }
 }

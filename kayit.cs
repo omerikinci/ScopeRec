@@ -700,7 +700,7 @@ class ViewerForm : Form
         catch (Exception e) { problems.Add(e.Message); }
         finally { Cursor = Cursors.Default; }
         ShowData();
-        if (problems.Count > 0) MessageBox.Show(this, string.Join("\n", problems.ToArray()), Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        if (problems.Count > 0) Msg.Info(this, string.Join("\n", problems.ToArray()), Text);
         if (rec != null)
         {
             string names = Path.GetFileName(rec.Path);
@@ -754,7 +754,7 @@ class ViewerForm : Form
         double lo = Fmt.Parse(txtLow.Text), hi = Fmt.Parse(txtHigh.Text);
         if (double.IsNaN(lo) && double.IsNaN(hi))
         {
-            MessageBox.Show(this, Ui.S("En az bir limit girin.", "Enter at least one limit."), Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            Msg.Info(this, Ui.S("En az bir limit girin.", "Enter at least one limit."), Text);
             return;
         }
         Column c = rec.Cols[cmbLimit.SelectedIndex];
@@ -1023,9 +1023,9 @@ class ViewerForm : Form
             lblHover.Visible = false;
             chart.SaveImage(path, ChartImageFormat.Png);
             stCursor.Text = Ui.S("Resim kaydedildi: ", "Image saved: ") + path;
-            if (tell) MessageBox.Show(this, Ui.S("Grafik resmi kaydedildi:\n", "Chart image saved:\n") + path, Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (tell) Msg.Info(this, Ui.S("Grafik resmi kaydedildi:\n", "Chart image saved:\n") + path, Text);
         }
-        catch (Exception e) { MessageBox.Show(this, e.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+        catch (Exception e) { Msg.Info(this, e.Message, Text); }
     }
 
     // --selftest <png> <dosyalar...> [--limit seri alt ust] [--event n]: dosyalari acar, pencere goruntusunu kaydedip kapanir (gelistirme icin)
