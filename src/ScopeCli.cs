@@ -1,4 +1,4 @@
-// sds.exe - komut satiri araci. Derleme icin: derle.bat
+// ScopeCli.exe - komut satiri araci. Derleme icin: build.bat
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -373,13 +373,13 @@ static class Program
     static int Usage()
     {
         Console.WriteLine(
-            "sds.exe                         etkilesimli SCPI terminali\r\n" +
-            "sds.exe \"*IDN?\"                 tek komut/sorgu\r\n" +
-            "sds.exe --meas C1:RMS,PKPK,PER  olcumleri durmadan oku (Ctrl+C ile dur); cok kanal: C1:RMS C2:FREQ\r\n" +
-            "sds.exe --loop \"C1:PAVA? MEAN\"  herhangi bir sorguyu durmadan tekrarla\r\n" +
-            "sds.exe --wave C1               dalga seklini durmadan cek\r\n" +
-            "sds.exe --com COM11             seri port koprusu (Termite icin, com0com cifti gerekir)\r\n" +
-            "sds.exe --tcp 5025              TCP koprusu (127.0.0.1)\r\n" +
+            "ScopeCli.exe                         etkilesimli SCPI terminali\r\n" +
+            "ScopeCli.exe \"*IDN?\"                 tek komut/sorgu\r\n" +
+            "ScopeCli.exe --meas C1:RMS,PKPK,PER  olcumleri durmadan oku (Ctrl+C ile dur); cok kanal: C1:RMS C2:FREQ\r\n" +
+            "ScopeCli.exe --loop \"C1:PAVA? MEAN\"  herhangi bir sorguyu durmadan tekrarla\r\n" +
+            "ScopeCli.exe --wave C1               dalga seklini durmadan cek\r\n" +
+            "ScopeCli.exe --com COM11             seri port koprusu (Termite icin, com0com cifti gerekir)\r\n" +
+            "ScopeCli.exe --tcp 5025              TCP koprusu (127.0.0.1)\r\n" +
             "Secenekler: --interval <ms>  --csv <dosya>  --dump <klasor> (her kareyi CSV yaz)  --timeout <ms>\r\n");
         return 1;
     }

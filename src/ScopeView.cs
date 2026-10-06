@@ -1,4 +1,4 @@
-// ScopeView.exe - onceden alinmis olcum kayitlarini ve loglarini goruntuleme araci. Derleme icin: derle.bat
+// ScopeView.exe - onceden alinmis olcum kayitlarini ve loglarini goruntuleme araci. Derleme icin: build.bat
 using System;
 using System.Collections.Generic;
 using System.Drawing;

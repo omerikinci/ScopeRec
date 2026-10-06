@@ -15,7 +15,7 @@ Osiloskopla WinUSB sürücüsü üzerinden doğrudan konuşur; NI-VISA ya da USB
 
 Komut seti cihaz kimliğinden (`*IDN?`) otomatik seçilir; soldaki **Komut seti** listesinden elle de seçilebilir.
 Bağlantı USB (WinUSB sürücüsüyle, USB Test & Measurement sınıfındaki ilk cihaz) ya da ağ (ham SCPI soketi, `IP:port`) olabilir.
-Yeni bir marka eklemek için `cihaz.cs` içindeki `Dialect` sınıfına bir komut şablonu eklemek yeterlidir.
+Yeni bir marka eklemek için `src\Devices.cs` içindeki `Dialect` sınıfına bir komut şablonu eklemek yeterlidir.
 
 ## Kullanım
 
@@ -27,7 +27,7 @@ Yeni bir marka eklemek için `cihaz.cs` içindeki `Dialect` sınıfına bir komu
 - Limit kontrolü: değer alt/üst limitin dışına çıkınca uyarır, olayı saatiyle ve süresiyle kaydeder
 - CSV kaydı (varsayılan `kayitlar` klasörüne; **Kayıt yeri…** ile konum ve klasör adı test başlamadan seçilebilir)
 - **Osiloskop ekranını kaydet**: osiloskobun kendi ekranındaki görüntüyü resim olarak kaydeder (yalnızca Siglent)
-- Türkçe / İngilizce arayüz ve açık / koyu tema (üst çubuktaki listelerden)
+- Türkçe / İngilizce arayüz ve açık / koyu tema (üst çubuktaki listelerden); olay listesinde sorunlar kırmızı, işaretler mavi, düzelmeler yeşil
 - Grafiği temizleme (onay sorar; CSV kayıtlarına dokunmaz) ve tüm ayarları varsayılana döndürme
 - Grafikte fare tekerleğiyle zamanda, Ctrl+tekerlekle değer ekseninde yakınlaştırma; çift tık sıfırlar. Fare altındaki anın değeri imlecin yanında görünür
 - **Test adı**: üst çubukta, Kayıt yeri düğmesinin yanındaki kutuya yazılan ad kayıt dosyalarının başına eklenir (`TEST7 15A_<tarih>.csv`)
@@ -77,32 +77,41 @@ ScopeRec kayıt sırasında `…_log.txt` dosyasını da yazar (zaman, t, mesaj;
 
 ## Komut satırı aracı
 
-`sds.exe` aynı bağlantıyı komut satırından kullanır:
+`ScopeCli.exe` aynı USB bağlantısını komut satırından kullanır (Siglent komutlarıyla):
 
 ```
-sds.exe                         etkileşimli SCPI terminali
-sds.exe "*IDN?"                 tek sorgu
-sds.exe --meas C1:RMS,PKPK      ölçümleri sürekli oku (--csv dosya ile kaydet)
-sds.exe --wave C1               dalga şeklini sürekli çek
-sds.exe --tcp 5025              TCP köprüsü
+ScopeCli.exe                         etkileşimli SCPI terminali
+ScopeCli.exe "*IDN?"                 tek sorgu
+ScopeCli.exe --meas C1:RMS,PKPK      ölçümleri sürekli oku (--csv dosya ile kaydet)
+ScopeCli.exe --wave C1               dalga şeklini sürekli çek
+ScopeCli.exe --tcp 5025              TCP köprüsü
 ```
 
-`olcum-baslat.bat` ve `terminal.bat` bu aracı çift tıklamayla başlatır.
+`ScopeCli-olcum.bat` ve `ScopeCli-terminal.bat` bu aracı çift tıklamayla başlatır.
 
-## Derleme
+## Klasör düzeni
 
-`derle.bat` iki programı Windows ile gelen C# derleyicisiyle derler; başka bir kurulum gerekmez.
-
-| Dosya | İçerik |
+| Dosya / klasör | İçerik |
 |---|---|
-| `usb.cs` | WinUSB üzerinden USBTMC çerçevelemesi (ortak) |
-| `cihaz.cs` | Bağlantı arayüzü, ağ bağlantısı ve marka bazlı komut setleri |
-| `ortak.cs` | Dil, tema ve sayı biçimlendirme (iki uygulama için ortak) |
-| `seri.cs` | Seri port bağlantısı, port listesi, satırlardan değer ayıklama |
-| `gui.cs` | ScopeRec: ölçüm uygulaması |
-| `seri_gui.cs` | ScopeRec'in seri port paneli |
-| `kayit.cs` | ScopeView: kayıt görüntüleyici |
-| `sds.cs` | Komut satırı aracı |
+| `ScopeRec.exe` | Ölçüm ve kayıt uygulaması |
+| `ScopeView.exe` | Kayıt görüntüleyici |
+| `ScopeCli.exe` | Komut satırı aracı |
+| `build.bat` | Üç programı Windows ile gelen C# derleyicisiyle derler; başka kurulum gerekmez |
+| `src\` | Kaynak kod ve uygulama ikonları |
+| `logo\` | Logo görselleri |
+| `kayitlar\` | Varsayılan kayıt klasörü (depoya girmez) |
+| `ayarlar.ini` | Uygulama ayarları (depoya girmez) |
+
+| Kaynak dosya | İçerik |
+|---|---|
+| `src\ScopeRec.cs` | ScopeRec: ölçüm uygulaması |
+| `src\ScopeRec.Serial.cs` | ScopeRec'in seri port paneli |
+| `src\ScopeView.cs` | ScopeView: kayıt görüntüleyici |
+| `src\ScopeCli.cs` | Komut satırı aracı |
+| `src\Common.cs` | Dil, tema, mesaj penceresi ve sayı biçimlendirme (ortak) |
+| `src\Devices.cs` | Bağlantı arayüzü, ağ bağlantısı ve marka bazlı komut setleri |
+| `src\UsbTmc.cs` | WinUSB üzerinden USBTMC çerçevelemesi |
+| `src\Serial.cs` | Seri port bağlantısı, port listesi, satırlardan değer ayıklama |
 
 ## Not
 

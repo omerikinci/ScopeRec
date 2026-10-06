@@ -1,4 +1,4 @@
-// ScopeRec.exe - pencereli olcum uygulamasi. Derleme icin: derle.bat
+// ScopeRec.exe - pencereli olcum uygulamasi. Derleme icin: build.bat
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -185,8 +185,15 @@ partial class MainForm : Form
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
         main.Padding = new Padding(4);
 
+        // olcum baslamadan once deger kutulari alaninda gorunen ipucu
+        lblCardsHint = new Label();
+        lblCardsHint.AutoSize = false; lblCardsHint.Size = new Size(620, 100); lblCardsHint.Margin = new Padding(8, 10, 0, 0);
+        lblCardsHint.TextAlign = ContentAlignment.MiddleLeft; lblCardsHint.ForeColor = Ui.Th.Muted; lblCardsHint.Font = new Font("Segoe UI", 10.5f);
+        lblCardsHint.Text = Ui.S("Soldan kanal ve parametreleri seçip Başlat'a basın.\nÖlçülen değerler burada, büyük rakamlarla ve min / maks / ortalamasıyla görünür.",
+                                 "Choose channels and parameters on the left, then press Start.\nMeasured values appear here in large digits with their min / max / mean.");
         cards = new FlowLayoutPanel();
         cards.Dock = DockStyle.Fill; cards.AutoScroll = true;
+        cards.Controls.Add(lblCardsHint);
         main.Controls.Add(cards, 0, 0);
 
         FlowLayoutPanel bar = new FlowLayoutPanel();
@@ -240,6 +247,10 @@ partial class MainForm : Form
         Legend lg = new Legend("l");
         lg.Docking = Docking.Top;
         chart.Legends.Add(lg);
+        chartHint = new Title(Ui.S("Henüz veri yok", "No data yet"));
+        chartHint.Docking = Docking.Top; chartHint.DockedToChartArea = "a"; chartHint.IsDockedInsideChartArea = true;
+        chartHint.Font = new Font("Segoe UI", 12f); chartHint.ForeColor = Ui.Th.Muted;
+        chart.Titles.Add(chartHint);
         lblHover = HoverTip.Create(chart);
         hovering = false;
         chart.MouseMove += delegate(object s, MouseEventArgs e) { hoverPt = e.Location; hovering = true; UpdateHover(); };
@@ -255,6 +266,7 @@ partial class MainForm : Form
         main.Controls.Add(scroll, 0, 3);
 
         lstLog = new ListBox();
+        lstLog.DrawMode = DrawMode.OwnerDrawFixed; lstLog.ItemHeight = 17; lstLog.DrawItem += DrawLogItem; logExtent = 0;
         lstLog.Dock = DockStyle.Fill; lstLog.IntegralHeight = false; lstLog.HorizontalScrollbar = true;
         lstLog.SelectionMode = SelectionMode.None; // satira tiklaninca mavi secili kalmasin; liste yalnizca okumak icin
         // Olay listesi grafigin altinda ayri bir bolmede; aradaki cubukla yuksekligi degisir
@@ -281,6 +293,7 @@ partial class MainForm : Form
         cmbConn = MakeCombo(70); cmbConn.Items.AddRange(new object[] { "USB", Ui.S("Ağ", "LAN") }); cmbConn.SelectedIndex = 0;
         cmbConn.SetBounds(12, 22, 70, 24);
         txtAddr = new TextBox(); txtAddr.SetBounds(88, 22, 138, 24);
+        Cue(txtAddr, "192.168.1.50:5025");
         cmbConn.SelectedIndexChanged += delegate { txtAddr.Enabled = cmbConn.SelectedIndex == 1; };
         txtAddr.Enabled = false;
         Label lAddr = MakeLabel(Ui.S("Ağ için IP adresi (örn. 192.168.1.50:5025)", "IP address for LAN (e.g. 192.168.1.50:5025)"), 0);
@@ -394,6 +407,8 @@ partial class MainForm : Form
         cmbTheme.SetBounds(1118, 17, 74, 24);
         cmbTheme.SelectedIndexChanged += delegate { Ui.Th = cmbTheme.SelectedIndex == 1 ? Theme.MakeDark() : Theme.Light(); BeginInvoke(new MethodInvoker(Rebuild)); };
         top.Controls.AddRange(new Control[] { btnStart, btnEnd, chkRecord, lName, txtTestName, btnFolder, btnShot, btnReset, cmbLang, cmbTheme, lblDevice });
+        top.Controls.AddRange(new Control[] { TopSeparator(256), TopSeparator(723), TopSeparator(1028), TopSeparator(1196) });
+        Cue(txtTestName, Ui.S("örn. TEST7 15A", "e.g. TEST7 15A"));
         topBar = top;
 
         StatusStrip st = new StatusStrip();
@@ -601,6 +616,7 @@ partial class MainForm : Form
         row.Dock = DockStyle.Top; row.Height = 32;
         Label l2 = new Label(); l2.Text = Ui.S("İşaret notu:", "Mark note:"); l2.SetBounds(0, 8, 72, 18);
         txtMark = new TextBox(); txtMark.SetBounds(74, 4, 260, 24);
+        Cue(txtMark, Ui.S("not yazıp Enter'a basın (boş da olur)", "type a note and press Enter (may be empty)"));
         txtMark.KeyDown += delegate(object s, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; AddMark(); } };
         Button btnMark = new Button(); btnMark.Text = Ui.S("İşaret koy", "Add mark"); btnMark.SetBounds(340, 2, 90, 28);
         btnMark.Click += delegate { AddMark(); };
@@ -775,6 +791,58 @@ partial class MainForm : Form
             else if (line.StartsWith("seri") && line.IndexOf('=') > 0) serIni[line.Substring(0, line.IndexOf('='))] = line.Substring(line.IndexOf('=') + 1);
         }
         SerialLoadSettings(serIni);
+    }
+
+    // ---------------------------------------------------------------- gorsel yardimcilar
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
+
+    // Bos yazi kutusunda soluk ipucu metni (yazmaya baslayinca kaybolur)
+    internal static void Cue(TextBox box, string hint)
+    {
+        EventHandler set = delegate { try { SendMessage(box.Handle, 0x1501, (IntPtr)1, hint); } catch (Exception) { } }; // EM_SETCUEBANNER
+        if (box.IsHandleCreated) set(null, null);
+        box.HandleCreated += set;
+    }
+
+    // Ust cubukta dugme gruplarini ayiran ince dikey cizgi
+    Panel TopSeparator(int x)
+    {
+        Panel p = new Panel();
+        p.SetBounds(x, 13, 1, 32); p.BackColor = Ui.Th.Border;
+        return p;
+    }
+
+    Label lblCardsHint;
+    Title chartHint;
+    int logExtent;
+
+    // Olay satirinin rengi: sorunlar kirmizi, isaretler mavi, duzelmeler yesil
+    static Color LogColor(string line)
+    {
+        string s = line.ToLowerInvariant();
+        if (line.Contains("LİMİT DIŞI") || s.Contains("out of limit  ") || s.Contains("hata") || s.Contains("error") || s.Contains("koptu") || s.Contains("lost")
+            || s.Contains("bulunamad") || s.Contains("not found") || s.Contains("yazılamadı")) return Ui.Th.Bad;
+        if (line.Contains("İŞARET") || line.Contains("MARK")) return Ui.Th.Chan[2];
+        if (s.Contains("normale döndü") || s.Contains("back to normal") || s.Contains("bağlandı") || s.Contains("connected") || s.Contains("kaydedildi") || s.Contains("saved")) return Ui.Th.Good;
+        if (line.Contains("   ") && (s.Contains("min ") || s.Contains("özet") || s.Contains("summary"))) return Ui.Th.Muted;
+        return Ui.Th.Text;
+    }
+
+    void DrawLogItem(object sender, DrawItemEventArgs e)
+    {
+        using (SolidBrush b = new SolidBrush(lstLog.BackColor)) e.Graphics.FillRectangle(b, e.Bounds);
+        if (e.Index < 0 || e.Index >= lstLog.Items.Count) return;
+        string line = (string)lstLog.Items[e.Index];
+        TextRenderer.DrawText(e.Graphics, line, lstLog.Font, new Point(e.Bounds.X + 2, e.Bounds.Y + 1), LogColor(line), TextFormatFlags.NoPrefix);
+    }
+
+    // Kendi cizdigimiz listede yatay kaydirma icin en uzun satirin genisligi elle verilir
+    void GrowLogExtent(string line)
+    {
+        int w = TextRenderer.MeasureText(line, lstLog.Font).Width + 12;
+        if (w > logExtent) { logExtent = w; lstLog.HorizontalExtent = w; }
     }
 
     Label MakeLabel(string text, int topMargin)
@@ -971,6 +1039,7 @@ partial class MainForm : Form
     {
         cards.SuspendLayout();
         cards.Controls.Clear();
+        if (series.Count == 0) cards.Controls.Add(lblCardsHint);
         int n = series.Count;
         cardPanel = new Panel[n]; cardValue = new Label[n]; cardStat = new Label[n];
         for (int i = 0; i < n; i++)
@@ -982,13 +1051,16 @@ partial class MainForm : Form
             title.Text = s.Ch + "  " + s.P.Code + "  (" + s.P.Name + ")";
             title.ForeColor = Ui.Th.Chan[Array.IndexOf(Chans, s.Ch)];
             title.Font = new Font(Font, FontStyle.Bold);
-            title.SetBounds(8, 6, 192, 18); title.AutoEllipsis = true;
+            title.SetBounds(14, 6, 186, 18); title.AutoEllipsis = true;
             Label val = new Label();
             val.Font = new Font("Segoe UI", 19f, FontStyle.Bold);
-            val.SetBounds(6, 24, 194, 40); val.Text = "—"; val.ForeColor = Ui.Th.Text;
+            val.SetBounds(12, 24, 188, 40); val.Text = "—"; val.ForeColor = Ui.Th.Text;
             Label stat = new Label();
             stat.Font = new Font("Segoe UI", 8f); stat.ForeColor = Ui.Th.Muted;
-            stat.SetBounds(8, 66, 192, 36);
+            stat.SetBounds(14, 66, 186, 36);
+            Panel accent = new Panel(); // sol kenarda kanal renginde serit
+            accent.SetBounds(0, 0, 5, 108); accent.BackColor = title.ForeColor;
+            p.Controls.Add(accent);
             foreach (Label l in new Label[] { title, val, stat }) l.BackColor = Color.Transparent;
             p.Controls.AddRange(new Control[] { title, val, stat });
             cards.Controls.Add(p);
@@ -1277,12 +1349,14 @@ partial class MainForm : Form
         lock (logQueue)
             while (logQueue.Count > 0)
             {
-                lstLog.Items.Insert(0, logQueue.Dequeue());
+                string logLine = logQueue.Dequeue();
+                lstLog.Items.Insert(0, logLine);
+                GrowLogExtent(logLine);
                 if (lstLog.Items.Count > 1000) lstLog.Items.RemoveAt(lstLog.Items.Count - 1);
             }
         if (!running && uiRunning) StopMeasure(); // is parcacigi kendi durduysa
 
-        lblDevice.Text = deviceText;
+        lblDevice.Text = deviceText.Length > 0 ? "● " + deviceText : "";
         lblDevice.ForeColor = connected ? Ui.Th.Good : Ui.Th.Bad;
 
         long n, viol; double tNow, rate = 0;
@@ -1469,6 +1543,7 @@ partial class MainForm : Form
                 sl.BorderColor = Ui.Th.Bad; sl.BorderWidth = 1; sl.BorderDashStyle = ChartDashStyle.Dash;
                 area.AxisY.StripLines.Add(sl);
             }
+        chartHint.Visible = names.Count + serNames.Count == 0 || tNow <= 0;
         area.RecalculateAxesScale();
         UpdateHover();
     }

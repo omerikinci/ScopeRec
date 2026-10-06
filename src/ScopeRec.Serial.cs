@@ -191,6 +191,7 @@ partial class MainForm
         };
 
         s.Send = new TextBox();
+        Cue(s.Send, Ui.S("komut yazıp Enter (ya da Gönder)", "type a command and press Enter (or Send)"));
         s.Send.SetBounds(8, H - 38, w - 16 - 150, 24); s.Send.Anchor = bottomWide;
         s.Send.KeyDown += delegate(object o, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; SerialSend(s); } };
         s.CmbEol = new ComboBox(); s.CmbEol.DropDownStyle = ComboBoxStyle.DropDownList;
