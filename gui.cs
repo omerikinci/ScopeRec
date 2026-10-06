@@ -132,7 +132,7 @@ partial class MainForm : Form
     double pendingStart = double.NaN;                // yakinlastirmadan sonra gorunumun baslayacagi an
     double viewT0, viewT1;                           // grafikte su an gosterilen zaman araligi (sn)
     double lastK = 1;                                // deger ekseninin olcegi (ornegin mV icin 1000)
-    static readonly int[] WindowSecs = { 30, 120, 600, 1800, 3600, 6 * 3600, 12 * 3600, 24 * 3600, 3 * 24 * 3600 };
+    static readonly int[] WindowSecs = { 30, 120, 600, 1800, 3600, 6 * 3600, 12 * 3600, 24 * 3600, 3 * 24 * 3600, 10 * 24 * 3600 };
     ListBox lstLog;
     ToolStripStatusLabel stState, stCount, stRate, stTime, stFile, stAlarm;
     System.Windows.Forms.Timer uiTimer;
@@ -198,11 +198,20 @@ partial class MainForm : Form
         cmbChart.SelectedIndexChanged += delegate { yLo = yHi = double.NaN; }; // baska parametrenin deger araligi anlamsiz
         bar.Controls.Add(cmbChart);
         bar.Controls.Add(MakeLabel(Ui.S("Zaman aralığı:", "Time span:"), 6));
-        cmbWindow = MakeCombo(100);
+        // yazilabilir liste: hazir araliklardan biri secilir ya da istenen sure yazilir (5 sn - 10 gun)
+        cmbWindow = new ComboBox(); cmbWindow.Width = 100;
         cmbWindow.Items.AddRange(new object[] { Ui.S("30 sn", "30 s"), Ui.S("2 dk", "2 min"), Ui.S("10 dk", "10 min"), Ui.S("30 dk", "30 min"), Ui.S("1 saat", "1 hour"),
             Ui.S("6 saat", "6 hours"), Ui.S("12 saat", "12 hours"), Ui.S("1 gün", "1 day"), Ui.S("3 gün", "3 days") });
-        cmbWindow.SelectedIndex = 1;
-        cmbWindow.SelectedIndexChanged += delegate { zoomWin = 0; };
+        cmbWindow.Items.Add(Ui.S("10 gün", "10 days"));
+        cmbWindow.Text = FormatSpan(winSecs);
+        cmbWindow.SelectedIndexChanged += delegate
+        {
+            if (winLoading || cmbWindow.SelectedIndex < 0) return;
+            winSecs = WindowSecs[cmbWindow.SelectedIndex]; zoomWin = 0;
+        };
+        cmbWindow.KeyDown += delegate(object s, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; ApplyWindowText(); chart.Focus(); } };
+        cmbWindow.Leave += delegate { ApplyWindowText(); };
+        NoStickySelection(cmbWindow);
         bar.Controls.Add(cmbWindow);
         Button btnClear = new Button();
         btnClear.Text = Ui.S("Grafiği temizle", "Clear chart"); btnClear.Size = new Size(120, 25); btnClear.Margin = new Padding(12, 2, 0, 0);
@@ -247,6 +256,7 @@ partial class MainForm : Form
 
         lstLog = new ListBox();
         lstLog.Dock = DockStyle.Fill; lstLog.IntegralHeight = false; lstLog.HorizontalScrollbar = true;
+        lstLog.SelectionMode = SelectionMode.None; // satira tiklaninca mavi secili kalmasin; liste yalnizca okumak icin
         // Olay listesi grafigin altinda ayri bir bolmede; aradaki cubukla yuksekligi degisir
         Panel logHost = new Panel();
         logHost.Dock = DockStyle.Bottom; logHost.Height = logHeight; logHost.Padding = new Padding(4, 0, 4, 4);
@@ -889,7 +899,8 @@ partial class MainForm : Form
             }
         }
         // 3 gunluk gecmis icin nokta siniri: tek seride ~2,6 milyon (8 okuma/sn x 3 gun), cok seride bellek icin bolusturulur
-        SeriesData.Cap = Math.Max(200000, 6000000 / list.Count);
+        // 10 gunluk gecmis icin nokta siniri: tek seride ~7 milyon (8 okuma/sn x 10 gun), cok seride bellek icin bolusturulur
+        SeriesData.Cap = Math.Max(200000, 8000000 / list.Count);
         follow = true; zoomWin = 0; yLo = yHi = double.NaN; pendingStart = double.NaN;
         lock (lk) { series = list; samples = 0; violations = 0; lastT = 0; marks.Clear(); }
         plotClock = Stopwatch.StartNew(); // olcum ve seri veri ayni sifirdan baslar
@@ -1213,11 +1224,52 @@ partial class MainForm : Form
 
     // ---------------------------------------------------------------- arayuz yenileme
 
+    // ---------------------------------------------------------------- zaman araligi: listeden ya da elle (5 sn - 10 gun)
+
+    const double MinWindow = 5, MaxWindow = 10 * 86400;
+    double winSecs = 120;   // secili zaman araligi (sn)
+    bool winLoading;
+
+    // "45", "45 sn", "5 dk", "1,5 saat", "2 gun", "90s", "10m", "2h", "3d" -> saniye; anlasilmazsa NaN. Birimsiz sayi saniyedir.
+    static double ParseSpan(string text)
+    {
+        Match m = Regex.Match(text.Trim().ToLowerInvariant(), @"^([\d.,]+)\s*([^\d\s.,]*)");
+        double v;
+        if (!m.Success || !double.TryParse(m.Groups[1].Value.Replace(',', '.'), NumberStyles.Float, Inv, out v)) return double.NaN;
+        string u = m.Groups[2].Value;
+        double k = 1;
+        if (u.StartsWith("sa") || u.StartsWith("h")) k = 3600;                                  // saat, hour
+        else if (u.StartsWith("s")) k = 1;                                                      // sn, saniye, s, sec
+        else if (u.StartsWith("dk") || u.StartsWith("dak") || u.StartsWith("m")) k = 60;        // dk, dakika, min
+        else if (u.StartsWith("g") || u.StartsWith("d")) k = 86400;                             // gun, day
+        else if (u.Length > 0) return double.NaN;
+        return v * k;
+    }
+
+    // 45 -> "45 sn", 90 -> "1,5 dk", 5400 -> "1,5 saat", 172800 -> "2 gun"
+    static string FormatSpan(double sec)
+    {
+        if (sec < 120 && sec % 60 != 0) return sec.ToString("0.##", Cur) + Ui.S(" sn", " s");
+        if (sec < 3600) return (sec / 60).ToString("0.##", Cur) + Ui.S(" dk", " min");
+        if (sec < 2 * 86400 && sec % 86400 != 0) return (sec / 3600).ToString("0.##", Cur) + Ui.S(" saat", " h");
+        return (sec / 86400).ToString("0.##", Cur) + Ui.S(" gün", " d");
+    }
+
+    // Kutuya yazilani uygular: gecerliyse 5 sn - 10 gun arasina sikistirir, degilse onceki degere doner
+    void ApplyWindowText()
+    {
+        if (winLoading) return;
+        double v = ParseSpan(cmbWindow.Text);
+        if (!double.IsNaN(v) && v > 0) { winSecs = Math.Max(MinWindow, Math.Min(MaxWindow, v)); zoomWin = 0; }
+        winLoading = true;
+        cmbWindow.Text = FormatSpan(winSecs);
+        winLoading = false;
+    }
+
     double WindowSeconds()
     {
         if (zoomWin > 0) return zoomWin;
-        int i = cmbWindow.SelectedIndex;
-        return i >= 0 && i < WindowSecs.Length ? WindowSecs[i] : 120;
+        return winSecs;
     }
 
     void RefreshUi()
@@ -1270,9 +1322,9 @@ partial class MainForm : Form
         ParamInfo p = (ParamInfo)cmbChart.SelectedItem;
         double win = WindowSeconds();
         // Zaman ekseni birimi pencereye gore: saniye / dakika / saat
-        double div = win <= 120 ? 1 : win <= 7200 ? 60 : 3600;
+        double div = win <= 120 ? 1 : win <= 7200 ? 60 : win <= 2 * 86400 ? 3600 : 86400;
         chartDiv = div;
-        string xUnit = div == 1 ? "s" : div == 60 ? Ui.S("dk", "min") : Ui.S("saat", "h");
+        string xUnit = div == 1 ? "s" : div == 60 ? Ui.S("dk", "min") : div == 3600 ? Ui.S("saat", "h") : Ui.S("gün", "d");
         List<string> names = new List<string>();
         List<double[]> xs = new List<double[]>(), ys = new List<double[]>();
         double maxAbs = 0, t0, t1;
@@ -1439,7 +1491,7 @@ partial class MainForm : Form
             {
                 double x0 = viewT0, x1 = viewT1; // eksenden okumak yerine son cizilen aralik: cizim bitmeden de dogru
                 if (double.IsNaN(x0) || double.IsNaN(x1) || x1 <= x0) return;
-                double w = Math.Max(2, Math.Min((x1 - x0) * k, WindowSecs[WindowSecs.Length - 1]));
+                double w = Math.Max(2, Math.Min((x1 - x0) * k, MaxWindow));
                 // Canli izlenirken en yeni veri gorunur kalir; gecmise bakilirken fare altindaki an yerinde kalir
                 if (!follow)
                 {
@@ -1549,7 +1601,7 @@ partial class MainForm : Form
                 "aralik=" + numInterval.Value.ToString(Inv),
                 "kayit=" + (chkRecord.Checked ? "1" : "0"),
                 "grafik=" + ((ParamInfo)cmbChart.SelectedItem).Code,
-                "pencere=" + cmbWindow.SelectedIndex,
+                "pencere_sn=" + winSecs.ToString(Inv),
                 "limit=" + (chkAlarm.Checked ? "1" : "0"),
                 "limit_kanal=" + cmbAlarmCh.SelectedItem,
                 "limit_parametre=" + ((ParamInfo)cmbAlarmParam.SelectedItem).Code,
@@ -1596,7 +1648,10 @@ partial class MainForm : Form
         if (d.TryGetValue("aralik", out v) && int.TryParse(v, out n)) numInterval.Value = Math.Max(numInterval.Minimum, Math.Min(numInterval.Maximum, n));
         if (d.TryGetValue("kayit", out v)) chkRecord.Checked = v == "1";
         if (d.TryGetValue("grafik", out v) && ParamInfo.Find(v) != null) cmbChart.SelectedItem = ParamInfo.Find(v);
-        if (d.TryGetValue("pencere", out v) && int.TryParse(v, out n) && n >= 0 && n < cmbWindow.Items.Count) cmbWindow.SelectedIndex = n;
+        double ws;
+        if (d.TryGetValue("pencere_sn", out v) && double.TryParse(v, NumberStyles.Float, Inv, out ws)) winSecs = Math.Max(MinWindow, Math.Min(MaxWindow, ws));
+        else if (d.TryGetValue("pencere", out v) && int.TryParse(v, out n) && n >= 0 && n < WindowSecs.Length) winSecs = WindowSecs[n]; // eski surumun ayari
+        winLoading = true; cmbWindow.Text = FormatSpan(winSecs); winLoading = false;
         if (d.TryGetValue("limit", out v)) chkAlarm.Checked = v == "1";
         if (d.TryGetValue("limit_kanal", out v) && Array.IndexOf(Chans, v) >= 0) cmbAlarmCh.SelectedItem = v;
         if (d.TryGetValue("limit_parametre", out v) && ParamInfo.Find(v) != null) cmbAlarmParam.SelectedItem = ParamInfo.Find(v);
@@ -1680,6 +1735,20 @@ partial class MainForm : Form
                     yLo = zc - (zc - zl) * 0.36; yHi = zc + (zh - zc) * 0.36;
                 }
                 if (mode == "sersend") { ses[0].Send.Text = "TEST:123"; SerialSend(ses[0]); Application.DoEvents(); Thread.Sleep(400); RefreshUi(); }
+                if (mode == "span")
+                {
+                    // zaman araligi girisini dene: cozumleme sonuclarini dosyaya yaz, sonra kutuya bir deger yazip uygula
+                    StringBuilder sb = new StringBuilder();
+                    foreach (string s in new string[] { "45", "45 sn", "5 dk", "1,5 saat", "2 gün", "90s", "10m", "2h", "3d", "1 hour", "10 days", "2", "99 gün", "abc", "7 dk" })
+                    {
+                        cmbWindow.Text = s; ApplyWindowText();
+                        sb.AppendLine(s + "  ->  " + winSecs.ToString(Inv) + " sn  ->  \"" + cmbWindow.Text + "\"");
+                    }
+                    File.WriteAllText(png + ".txt", sb.ToString(), new UTF8Encoding(true));
+                    cmbWindow.Text = "20 sn"; ApplyWindowText();
+                    lstLog.Focus();
+                    for (int z = 0; z < 4; z++) { Application.DoEvents(); Thread.Sleep(250); RefreshUi(); }
+                }
                 if (mode == "tools")
                 {
                     // isaret koy, biraz daha olc, bir isaret daha, grafigi resim olarak kaydet

@@ -23,7 +23,7 @@ Yeni bir marka eklemek için `cihaz.cs` içindeki `Dialect` sınıfına bir komu
 
 - **Başlat / Duraklat / Devam et / Testi bitir**: duraklatınca test açık kalır; devam edince grafik, süre ve kayıt dosyaları kaldığı yerden sürer (aradaki boşluk grafikte kesik görünür). **Testi bitir** onay sorar, dosyaları kapatır; sonraki başlatma sıfırdan yeni testtir
 - Kanal (C1–C4) ve ölçüm seçimi: RMS, ortalama (DC), tepe-tepe, frekans, periyot vb.
-- Canlı değer kutuları (min / maks / ortalama) ve canlı grafik (30 sn – 3 gün arası zaman aralığı; veri pencereden uzunsa alttaki çubukla geçmişte gezilir)
+- Canlı değer kutuları (min / maks / ortalama) ve canlı grafik (zaman aralığı listeden seçilir ya da elle yazılır: 5 sn – 10 gün, örn. `45 sn`, `7 dk`, `1,5 saat`, `2 gün`; veri pencereden uzunsa alttaki çubukla geçmişte gezilir)
 - Limit kontrolü: değer alt/üst limitin dışına çıkınca uyarır, olayı saatiyle ve süresiyle kaydeder
 - CSV kaydı (varsayılan `kayitlar` klasörüne; **Kayıt yeri…** ile konum ve klasör adı test başlamadan seçilebilir)
 - **Osiloskop ekranını kaydet**: osiloskobun kendi ekranındaki görüntüyü resim olarak kaydeder (yalnızca Siglent)
