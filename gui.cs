@@ -167,7 +167,7 @@ partial class MainForm : Form
         uiTimer.Interval = 250;
         uiTimer.Tick += delegate { RefreshUi(); };
         uiTimer.Start();
-        FormClosing += delegate { EndTest(false); SaveSettings(); SerialDisconnectAll(); };
+        FormClosing += delegate(object s, FormClosingEventArgs e) { OnClosingForm(e); };
         Shown += delegate { Config c = ReadConn(); ThreadPool.QueueUserWorkItem(delegate { if (!running) WithDevice(c, null); }); };
         Shown += delegate { SerialAutoConnect(); }; // gecen sefer acik olan seri baglantilari yeniden ac
     }
@@ -208,6 +208,10 @@ partial class MainForm : Form
         btnClear.Text = Ui.S("Grafiği temizle", "Clear chart"); btnClear.Size = new Size(120, 25); btnClear.Margin = new Padding(12, 2, 0, 0);
         btnClear.Click += delegate { ClearChart(); };
         bar.Controls.Add(btnClear);
+        Button btnImage = new Button();
+        btnImage.Text = Ui.S("Resim kaydet", "Save image"); btnImage.Size = new Size(104, 25); btnImage.Margin = new Padding(6, 2, 0, 0);
+        btnImage.Click += delegate { SaveChartImage(); };
+        bar.Controls.Add(btnImage);
         lblHistory = MakeLabel(Ui.S("Geçmiş gösteriliyor – canlı için çubuğu sağa çekin", "Viewing history – drag the bar right for live"), 6);
         lblHistory.Margin = new Padding(16, 6, 0, 0);
         lblHistory.ForeColor = Ui.Th.Bad; lblHistory.Visible = false;
@@ -246,7 +250,8 @@ partial class MainForm : Form
         // Olay listesi grafigin altinda ayri bir bolmede; aradaki cubukla yuksekligi degisir
         Panel logHost = new Panel();
         logHost.Dock = DockStyle.Bottom; logHost.Height = logHeight; logHost.Padding = new Padding(4, 0, 4, 4);
-        logHost.Controls.Add(lstLog);
+        logHost.Controls.Add(lstLog);          // Dock: son eklenen once yerlesir
+        logHost.Controls.Add(BuildTestRow());
         GripSplitter logSplit = new GripSplitter(DockStyle.Bottom);
         logSplit.MinSize = 60; logSplit.MinExtra = 220;
         logSplit.SplitterMoved += delegate { logHeight = logHost.Height; };
@@ -550,6 +555,128 @@ partial class MainForm : Form
         }
     }
 
+    // ---------------------------------------------------------------- test araclari: ad, isaret, ozet, resim, goruntuleyici
+
+    TextBox txtTestName, txtMark;
+    string testName = "";                                   // kayit dosyalarinin basina eklenir
+    string lastStem;                                        // en son kaydin kok adi (ScopeView dugmesi icin)
+    readonly List<double> marks = new List<double>();       // isaret zamanlari (grafikte dikey cizgi; kilit: lk)
+    bool awake;
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    static extern uint SetThreadExecutionState(uint flags);
+
+    // Olay listesinin ustundeki satir: test adi, isaret notu, ScopeView
+    Panel BuildTestRow()
+    {
+        Panel row = new Panel();
+        row.Dock = DockStyle.Top; row.Height = 32;
+        Label l1 = new Label(); l1.Text = Ui.S("Test adı:", "Test name:"); l1.SetBounds(0, 8, 66, 18);
+        txtTestName = new TextBox(); txtTestName.Text = testName; txtTestName.SetBounds(68, 4, 150, 24);
+        txtTestName.TextChanged += delegate { testName = txtTestName.Text.Trim(); };
+        Label l2 = new Label(); l2.Text = Ui.S("İşaret:", "Mark:"); l2.SetBounds(230, 8, 44, 18);
+        txtMark = new TextBox(); txtMark.SetBounds(276, 4, 220, 24);
+        txtMark.KeyDown += delegate(object s, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; AddMark(); } };
+        Button btnMark = new Button(); btnMark.Text = Ui.S("İşaret koy", "Add mark"); btnMark.SetBounds(502, 2, 90, 28);
+        btnMark.Click += delegate { AddMark(); };
+        Button btnView = new Button(); btnView.Text = Ui.S("ScopeView ile aç", "Open in ScopeView"); btnView.SetBounds(604, 2, 130, 28);
+        btnView.Click += delegate { OpenInViewer(); };
+        row.Controls.AddRange(new Control[] { l1, txtTestName, l2, txtMark, btnMark, btnView });
+        return row;
+    }
+
+    // Test adindan dosya adinda kullanilabilecek on ek: "TEST5 15A" -> "TEST5 15A_"; bossa "olcum_"
+    string FilePrefix()
+    {
+        string n = testName;
+        foreach (char c in Path.GetInvalidFileNameChars()) n = n.Replace(c, '-');
+        n = n.Trim().TrimEnd('.');
+        return n.Length > 0 ? n + "_" : "olcum_";
+    }
+
+    // Su anki ana isaret koyar: olay listesine (ve kayit aciksa log dosyasina) notuyla yazilir, grafikte dikey cizgi olur.
+    // Test sirasinda "yuk baglandi", "akim 15A yapildi" gibi anlari sonradan bulmak icin.
+    void AddMark()
+    {
+        string note = txtMark.Text.Trim();
+        double t = plotClock.Elapsed.TotalSeconds;
+        lock (lk) { marks.Add(t); if (marks.Count > 2000) marks.RemoveAt(0); }
+        Log(Ui.S("İŞARET", "MARK") + (note.Length > 0 ? ": " + note : "") + "  (t = " + Span(t) + ")");
+        txtMark.SelectAll();
+    }
+
+    // Test bitince olay listesine ve log dosyasina yazilan ozet
+    void LogSummary()
+    {
+        List<string> lines = new List<string>();
+        lock (lk)
+        {
+            lines.Add(Ui.S("Özet – süre ", "Summary – duration ") + Span((DateTime.Now - startedAt).TotalSeconds) + ", " + samples + Ui.S(" okuma", " readings")
+                + (cfg != null && cfg.AlarmIdx >= 0 ? ", " + Ui.S("limit dışı ", "out of limit ") + violations + Ui.S(" kez", " times") : ""));
+            foreach (SeriesData s in series)
+                if (s.N > 0)
+                    lines.Add("   " + s.Ch + " " + s.P.Code + ":  min " + Eng(s.Min, s.P.Unit) + Ui.S("   maks ", "   max ") + Eng(s.Max, s.P.Unit)
+                        + Ui.S("   ortalama ", "   mean ") + Eng(s.Sum / s.N, s.P.Unit));
+            int shown = 0;
+            foreach (string key in serKeys)
+            {
+                SeriesData s = serSeries[key];
+                if (s.N == 0 || ++shown > 12) continue;
+                lines.Add("   " + key + Ui.S(" (seri)", " (serial)") + ":  min " + SerNum(s.Min) + Ui.S("   maks ", "   max ") + SerNum(s.Max)
+                    + Ui.S("   ortalama ", "   mean ") + SerNum(s.Sum / s.N));
+            }
+        }
+        foreach (string l in lines) Log(l);
+    }
+
+    void SaveChartImage()
+    {
+        try
+        {
+            Directory.CreateDirectory(RecDir);
+            string path = Path.Combine(RecDir, FilePrefix() + Ui.S("grafik_", "chart_") + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".png");
+            chart.SaveImage(path, ChartImageFormat.Png);
+            Log(Ui.S("Grafik resmi kaydedildi: ", "Chart image saved: ") + path);
+        }
+        catch (Exception e) { Log(Ui.S("Grafik resmi kaydedilemedi: ", "Could not save the chart image: ") + e.Message); }
+    }
+
+    // En son (ya da suren) kaydi ScopeView ile acar; kayit yoksa ScopeView bos acilir
+    void OpenInViewer()
+    {
+        string exe = Path.Combine(baseDir, "ScopeView.exe");
+        if (!File.Exists(exe)) { Log(Ui.S("ScopeView.exe bu klasörde bulunamadı", "ScopeView.exe was not found in this folder")); return; }
+        string stem = testStem ?? lastStem;
+        try
+        {
+            if (stem != null && File.Exists(stem + ".csv")) Process.Start(exe, "\"" + stem + ".csv\"");
+            else Process.Start(exe);
+        }
+        catch (Exception e) { Log(Ui.S("ScopeView açılamadı: ", "Could not open ScopeView: ") + e.Message); }
+    }
+
+    // Test surerken ya da seri port acikken bilgisayar kendiliginden uykuya gecmesin (ekran kapanabilir).
+    // Arayuz is parcacigindan cagrilmali: ayar is parcacigina baglidir.
+    void KeepAwake()
+    {
+        bool want = testActive;
+        foreach (SerSession s in ses) if (s.Link != null) want = true;
+        if (want == awake) return;
+        awake = want;
+        try { SetThreadExecutionState(want ? 0x80000001u : 0x80000000u); } catch (Exception) { } // ES_CONTINUOUS [+ ES_SYSTEM_REQUIRED]
+    }
+
+    // Kapatma onayi: suren test yanlislikla kapatilmasin
+    void OnClosingForm(FormClosingEventArgs e)
+    {
+        if (testActive && e.CloseReason == CloseReason.UserClosing &&
+            !Confirm(Ui.S("Bir test sürüyor. Pencere kapatılırsa test bitirilir ve kayıt dosyaları kapatılır.\n\nKapatılsın mı?",
+                          "A test is in progress. Closing the window ends the test and closes the record files.\n\nClose anyway?")))
+        { e.Cancel = true; return; }
+        EndTest(false); SaveSettings(); SerialDisconnectAll();
+        try { SetThreadExecutionState(0x80000000u); } catch (Exception) { }
+    }
+
     bool testNoAsk; // --selftest: onay pencereleri atlanir
 
     // Evet / Hayir onayi; varsayilan dugme Hayir
@@ -565,6 +692,7 @@ partial class MainForm : Form
                           "The whole chart will be cleared. Continue?\n\n(Recordings already written to CSV are not deleted.)"))) return;
         lock (lk) { foreach (SeriesData s in series) { s.T.Clear(); s.V.Clear(); s.ResetStats(); } }
         ClearSerialSeries();
+        lock (lk) marks.Clear();
         follow = true;
     }
 
@@ -615,6 +743,7 @@ partial class MainForm : Form
             if (line == "dil=en") Ui.En = true;
             else if (line == "dil=tr") Ui.En = false;
             else if (line == "tema=koyu") Ui.Th = Theme.MakeDark();
+            else if (line.StartsWith("test_adi=")) testName = line.Substring(9);
             else if (line.StartsWith("olay_yukseklik=")) { int lh; if (int.TryParse(line.Substring(15), out lh)) logHeight = Math.Max(60, Math.Min(600, lh)); }
             else if (line.StartsWith("seri") && line.IndexOf('=') > 0) serIni[line.Substring(0, line.IndexOf('='))] = line.Substring(line.IndexOf('=') + 1);
         }
@@ -745,9 +874,10 @@ partial class MainForm : Form
         // 3 gunluk gecmis icin nokta siniri: tek seride ~2,6 milyon (8 okuma/sn x 3 gun), cok seride bellek icin bolusturulur
         SeriesData.Cap = Math.Max(200000, 6000000 / list.Count);
         follow = true; zoomWin = 0; yLo = yHi = double.NaN; pendingStart = double.NaN;
-        lock (lk) { series = list; samples = 0; violations = 0; lastT = 0; }
+        lock (lk) { series = list; samples = 0; violations = 0; lastT = 0; marks.Clear(); }
         plotClock = Stopwatch.StartNew(); // olcum ve seri veri ayni sifirdan baslar
         ClearSerialSeries();
+        lock (lk) marks.Clear();
         cfg = c;
         alarmOut = false;
         // grafikte secili parametre olculmuyorsa ilk olculene gec
@@ -800,6 +930,8 @@ partial class MainForm : Form
         string stem = testStem;
         testStem = null; measStem = null;
         Log(Ui.S("Test bitti", "Test ended"));
+        LogSummary();
+        lastStem = stem ?? lastStem;
         if (stem != null) LogSaved(stem);
         SetLogFile(null);
         foreach (Control ctl in lockWhileRunning) ctl.Enabled = true;
@@ -931,7 +1063,7 @@ partial class MainForm : Form
                         if (!resume)
                         {
                             Directory.CreateDirectory(RecDir);
-                            name = Path.Combine(RecDir, "olcum_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+                            name = Path.Combine(RecDir, FilePrefix() + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
                         }
                         csv = new StreamWriter(name + ".csv", resume, new UTF8Encoding(true));
                         csv.AutoFlush = true;
@@ -1112,6 +1244,7 @@ partial class MainForm : Form
         stAlarm.ForeColor = viol > 0 ? Ui.Th.Bad : Ui.Th.Text;
         stFile.Text = recFile.Length > 0 ? Ui.S("Kayıt: ", "Recording: ") + recName + "\\" + recFile : "";
         RefreshSerial();
+        KeepAwake();
         RefreshChart(tNow);
     }
 
@@ -1246,6 +1379,17 @@ partial class MainForm : Form
         }
         area.AxisY2.Enabled = serNames.Count > 0 ? AxisEnabled.True : AxisEnabled.False;
 
+        // isaretler: gorunen araliktakiler dikey kesikli cizgi
+        area.AxisX.StripLines.Clear();
+        lock (lk)
+            foreach (double mt in marks)
+            {
+                if (mt < t0 || mt > t1) continue;
+                StripLine ml = new StripLine();
+                ml.IntervalOffset = mt / div; ml.StripWidth = 0;
+                ml.BorderColor = Ui.Th.Chan[2]; ml.BorderWidth = 1; ml.BorderDashStyle = ChartDashStyle.Dash;
+                area.AxisX.StripLines.Add(ml);
+            }
         area.AxisY.StripLines.Clear();
         if (cfg != null && cfg.AlarmIdx >= 0 && cfg.AlarmIdx < series.Count && series[cfg.AlarmIdx].P == p)
             foreach (double lim in new double[] { cfg.Low, cfg.High })
@@ -1399,6 +1543,7 @@ partial class MainForm : Form
                 "adres=" + txtAddr.Text.Trim(),
                 "komut_seti=" + cmbDialect.SelectedIndex,
                 "olay_yukseklik=" + logHeight,
+                "test_adi=" + testName,
                 "kayit_yeri=" + recBase,
                 "kayit_klasoru=" + recName,
                 "dil=" + (Ui.En ? "en" : "tr"),
@@ -1452,6 +1597,7 @@ partial class MainForm : Form
     // "toggle": once dil ve tema calisirken degistirilir. "scroll": goruntuden once grafik gecmisin basina kaydirilir.
     public void SelfTest(string png, int seconds, string mode)
     {
+        testNoAsk = true; // kapatma ve diger onaylar test sirasinda sorulmaz
         Shown += delegate
         {
             if (mode == "recdlg")
@@ -1494,6 +1640,15 @@ partial class MainForm : Form
                     yLo = zc - (zc - zl) * 0.36; yHi = zc + (zh - zc) * 0.36;
                 }
                 if (mode == "sersend") { ses[0].Send.Text = "TEST:123"; SerialSend(ses[0]); Application.DoEvents(); Thread.Sleep(400); RefreshUi(); }
+                if (mode == "tools")
+                {
+                    // isaret koy, biraz daha olc, bir isaret daha, grafigi resim olarak kaydet
+                    txtMark.Text = "yuk baglandi"; AddMark();
+                    for (int z = 0; z < 8; z++) { Application.DoEvents(); Thread.Sleep(250); RefreshUi(); }
+                    txtMark.Text = ""; AddMark();
+                    for (int z = 0; z < 4; z++) { Application.DoEvents(); Thread.Sleep(250); RefreshUi(); }
+                    SaveChartImage();
+                }
                 if (mode == "pause")
                 {
                     // duraklat, 3 sn bekle, devam et, 4 sn daha olc: grafikte bosluk ve ayni dosyaya devam beklenir

@@ -538,7 +538,7 @@ class ViewerForm : Form
         btnAll.Text = Ui.S("Tümünü göster", "Show all"); btnAll.SetBounds(126, 10, 110, 30);
         btnAll.Click += delegate { ShowAll(); };
         lblFiles = new Label();
-        lblFiles.SetBounds(470, 6, 700, 40); lblFiles.Anchor = AnchorStyles.Left | AnchorStyles.Top;
+        lblFiles.SetBounds(580, 6, 700, 40); lblFiles.Anchor = AnchorStyles.Left | AnchorStyles.Top;
         lblFiles.Text = Ui.S("Tekerlek: zamanda yakınlaştır  ·  Ctrl+tekerlek: değerde yakınlaştır  ·  sürükle: aralık seç\nçift tık: tümünü göster  ·  olaya tıkla: oraya git",
                              "Wheel: zoom time  ·  Ctrl+wheel: zoom values  ·  drag: select range\ndouble click: show all  ·  click an event: go there");
         Label lAxis = new Label();
@@ -547,7 +547,10 @@ class ViewerForm : Form
         cmbAxis.Items.AddRange(new object[] { Ui.S("Kayıt süresi", "Elapsed time"), Ui.S("Saat", "Clock time") });
         cmbAxis.SelectedIndex = 0; cmbAxis.SetBounds(334, 13, 120, 24);
         cmbAxis.SelectedIndexChanged += delegate { Redraw(); };
-        topBar.Controls.AddRange(new Control[] { btnOpen, btnAll, lAxis, cmbAxis, lblFiles });
+        Button btnImage = new Button();
+        btnImage.Text = Ui.S("Resim kaydet", "Save image"); btnImage.SetBounds(464, 10, 104, 30);
+        btnImage.Click += delegate { SaveImage(true); };
+        topBar.Controls.AddRange(new Control[] { btnOpen, btnAll, lAxis, cmbAxis, btnImage, lblFiles });
 
         status = new StatusStrip();
         stCursor = new ToolStripStatusLabel(""); stCursor.Spring = true; stCursor.TextAlign = ContentAlignment.MiddleLeft;
@@ -1010,9 +1013,25 @@ class ViewerForm : Form
         HoverTip.Show(lblHover, tip.ToString(), hoverPt);
     }
 
+    // Gorunen grafigi (yakinlastirma ve secili serilerle) kaydin yanina PNG olarak kaydeder
+    void SaveImage(bool tell)
+    {
+        if (rec == null) return;
+        try
+        {
+            string path = Path.Combine(Path.GetDirectoryName(rec.Path), Path.GetFileNameWithoutExtension(rec.Path) + Ui.S("_grafik_", "_chart_") + DateTime.Now.ToString("HHmmss") + ".png");
+            lblHover.Visible = false;
+            chart.SaveImage(path, ChartImageFormat.Png);
+            stCursor.Text = Ui.S("Resim kaydedildi: ", "Image saved: ") + path;
+            if (tell) MessageBox.Show(this, Ui.S("Grafik resmi kaydedildi:\n", "Chart image saved:\n") + path, Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception e) { MessageBox.Show(this, e.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+    }
+
     // --selftest <png> <dosyalar...> [--limit seri alt ust] [--event n]: dosyalari acar, pencere goruntusunu kaydedip kapanir (gelistirme icin)
     public bool TestClock; // --clock: zaman eksenini saat moduna alir
     public bool TestZoomY; // --zoomy: deger ekseninde yakinlastirilmis gorunum
+    public bool TestSaveImage; // --saveimg: grafigi resim olarak kaydeder
     public void SelfTest(string png, List<string> files, string[] limit, int eventIndex)
     {
         Shown += delegate
@@ -1033,6 +1052,7 @@ class ViewerForm : Form
                 t.Stop();
                 hoverPt = new Point(chart.Width / 2, chart.Height / 2);
                 ShowCursor(chart.Width / 2);
+                if (TestSaveImage) SaveImage(false);
                 TopMost = true; Activate(); Refresh(); Application.DoEvents(); Thread.Sleep(300); Application.DoEvents();
                 using (Bitmap b = new Bitmap(Width, Height))
                 {
@@ -1064,6 +1084,7 @@ static class ViewerProgram
                 else if (args[i] == "--event" && i + 1 < args.Length) ev = int.Parse(args[++i]);
                 else if (args[i] == "--clock") f.TestClock = true;
                 else if (args[i] == "--zoomy") f.TestZoomY = true;
+                else if (args[i] == "--saveimg") f.TestSaveImage = true;
                 else files.Add(args[i]);
             }
             f.SelfTest(args[1], files, limit, ev);

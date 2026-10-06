@@ -35,6 +35,11 @@ partial class MainForm
         public readonly List<string> Keys = new List<string>();      // bu baglantidan gelen deger adlari (kilit: lk)
         public readonly object Lock = new object();
         public volatile string Closed;                               // baglanti kendiliginden koptuysa sebep
+        // kopan baglantiyi kendiliginden yeniden acma
+        public bool Retry;                                           // kopunca true; kullanici kesince false
+        public int RetryAt;                                          // bir sonraki denemenin zamani (Environment.TickCount)
+        public volatile bool Connecting;                             // arka planda deneme suruyor
+        public volatile SerialLink Pending;                          // arka planda acilan baglanti; arayuz is parcacigi devralir
         public volatile bool StampNow, RecNow;
         // kayit (kilit: Lock)
         public StreamWriter Writer;
@@ -142,7 +147,12 @@ partial class MainForm
 
         s.Conn = new Button();
         s.Conn.SetBounds(8, 34, 110, 28);
-        s.Conn.Click += delegate { if (s.Link != null) SerialDisconnect(s, null); else SerialConnect(s); };
+        s.Conn.Click += delegate
+        {
+            if (s.Link != null) SerialDisconnect(s, null);
+            else if (s.Retry) { s.Retry = false; SerialNote(s, Ui.S("Yeniden bağlanma durduruldu", "Stopped trying to reconnect")); SerialTabs(); }
+            else SerialConnect(s);
+        };
         s.ChkDtr = new CheckBox(); s.ChkDtr.Text = "DTR"; s.ChkDtr.Checked = s.Dtr; s.ChkDtr.SetBounds(128, 38, 52, 22);
         s.ChkRts = new CheckBox(); s.ChkRts.Text = "RTS"; s.ChkRts.Checked = s.Rts; s.ChkRts.SetBounds(182, 38, 52, 22);
         Button btnClear = new Button();
@@ -219,13 +229,13 @@ partial class MainForm
             bool on = s.Link != null, active = i == serActive;
             if (on) connected++;
             s.Page.Visible = active;
-            s.Tab.Text = (on ? "● " : "○ ") + (i + 1) + (on ? ": " + ShortPort(s.Link.Name) : s.Port.Length > 0 ? ": " + ShortPort(s.Port) : "");
-            s.Tab.ForeColor = on ? t.Good : t.Text;
+            s.Tab.Text = (on ? "● " : s.Retry ? "◌ " : "○ ") + (i + 1) + (on ? ": " + ShortPort(s.Link.Name) : s.Port.Length > 0 ? ": " + ShortPort(s.Port) : "");
+            s.Tab.ForeColor = on ? t.Good : s.Retry ? t.Bad : t.Text;
             s.Tab.BackColor = active ? t.Card : t.Back;
             s.Tab.FlatAppearance.BorderColor = active ? t.Good : t.Border;
             s.Tab.FlatAppearance.BorderSize = active ? 2 : 1;
-            s.Conn.Text = on ? Ui.S("Bağlantıyı kes", "Disconnect") : Ui.S("Bağlan", "Connect");
-            s.CmbPort.Enabled = s.CmbBaud.Enabled = s.ChkDtr.Enabled = s.ChkRts.Enabled = !on;
+            s.Conn.Text = on ? Ui.S("Bağlantıyı kes", "Disconnect") : s.Retry ? Ui.S("Denemeyi bırak", "Stop retrying") : Ui.S("Bağlan", "Connect");
+            s.CmbPort.Enabled = s.CmbBaud.Enabled = s.ChkDtr.Enabled = s.ChkRts.Enabled = !on && !s.Retry;
         }
         lblSerState.Text = connected == 0 ? Ui.S("bağlı değil", "not connected") : connected + Ui.S(" bağlantı açık", connected == 1 ? " connection open" : " connections open");
         lblSerState.ForeColor = connected > 0 ? t.Good : t.Muted;
@@ -322,6 +332,8 @@ partial class MainForm
     {
         if (s.Link == null) return;
         s.Link.Dispose(); s.Link = null;
+        // Kendiliginden koptuysa (kablo cikti, cihaz yeniden basladi) birkac saniyede bir yeniden denenir; kullanici kestiyse denenmez
+        s.Retry = why != null; s.RetryAt = Environment.TickCount + 2000;
         string file;
         lock (s.Lock)
         {
@@ -331,11 +343,40 @@ partial class MainForm
         }
         string n = (s.Index + 1).ToString();
         SerialNote(s, why == null ? Ui.S("Bağlantı kesildi", "Disconnected") : Ui.S("Bağlantı koptu", "Connection lost") + (why.Length > 0 ? ": " + why : ""));
+        if (why != null) SerialNote(s, Ui.S("Yeniden bağlanmak için bekleniyor…", "Waiting to reconnect…"));
         if (file != null) SerialNote(s, Ui.S("Seri kayıt dosyası: ", "Serial record file: ") + file);
         Log(why == null ? Ui.S("Seri port " + n + " bağlantısı kesildi", "Serial port " + n + " disconnected")
                         : Ui.S("Seri port " + n + " bağlantısı koptu", "Serial port " + n + " connection lost"));
         if (file != null) Log(Ui.S("Seri kayıt dosyası: ", "Serial record file: ") + file);
         if (serPanel != null && !serPanel.IsDisposed) SerialTabs();
+    }
+
+    // Kopan baglanti icin: arka planda acmayi dener, acilinca arayuz is parcaciginda devralir
+    void SerialRetry(SerSession s)
+    {
+        SerialLink pend = s.Pending;
+        if (pend != null)
+        {
+            s.Pending = null;
+            if (!s.Retry || s.Link != null) pend.Dispose(); // bu arada kullanici vazgecti ya da elle baglandi
+            else
+            {
+                s.Link = pend; s.Retry = false; s.Closed = null;
+                SerialNote(s, Ui.S("Yeniden bağlandı: ", "Reconnected: ") + pend.Name);
+                Log(Ui.S("Seri port " + (s.Index + 1) + " yeniden bağlandı: ", "Serial port " + (s.Index + 1) + " reconnected: ") + pend.Name);
+                SerialTabs();
+            }
+        }
+        int baud;
+        if (!s.Retry || s.Link != null || s.Connecting || Environment.TickCount - s.RetryAt < 0 || !int.TryParse(s.Baud, out baud)) return;
+        s.Connecting = true;
+        string name = s.Port; bool dtr = s.Dtr, rts = s.Rts;
+        ThreadPool.QueueUserWorkItem(delegate
+        {
+            try { s.Pending = SerialLink.Open(name, baud, dtr, rts, delegate(string line) { OnSerialLine(s, line); }, delegate(string why) { s.Closed = why; }); }
+            catch (Exception) { } // port henuz yok: sonraki denemede
+            finally { s.RetryAt = Environment.TickCount + 2000; s.Connecting = false; }
+        });
     }
 
     void SerialDisconnectAll()
@@ -436,6 +477,7 @@ partial class MainForm
         {
             string why = s.Closed;
             if (why != null && s.Link != null) { s.Closed = null; SerialDisconnect(s, why); }
+            SerialRetry(s);
 
             StringBuilder add = null;
             lock (s.Lock)
@@ -504,7 +546,7 @@ partial class MainForm
             lines.Add(k + "dtr=" + (s.Dtr ? "1" : "0"));
             lines.Add(k + "rts=" + (s.Rts ? "1" : "0"));
             lines.Add(k + "satir_sonu=" + s.Eol);
-            lines.Add(k + "bagli=" + (s.Link != null ? "1" : "0"));
+            lines.Add(k + "bagli=" + (s.Link != null || s.Retry ? "1" : "0"));
         }
         lines.Add("seri_grafik=" + string.Join(",", new List<string>(serShown).ToArray()));
         lines.Add("seri_panel=" + (serPanelOn ? "1" : "0"));
