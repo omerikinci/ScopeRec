@@ -146,7 +146,10 @@ partial class MainForm : Form
     Thread worker;
     Config cfg;
     volatile bool running, wantRecord, connected, alarmOut;
-    volatile string deviceText = "", shotRequest, recFile = "";
+    volatile string shotRequest, recFile = "";
+    // Cihaz durumu metin olarak degil durum koduyla tutulur; yazi gosterilirken secili dilde uretilir
+    volatile int deviceState;         // 0 = bilinmiyor, 1 = bagli, 2 = bulunamadi-bekleniyor, 3 = koptu, 4 = bulunamadi
+    volatile string deviceIdn = "";
     double lastT;
     long samples, violations;
     DateTime startedAt;
@@ -1129,16 +1132,16 @@ partial class MainForm : Form
                         u = OpenLink(c);
                         if (u == null)
                         {
-                            connected = false; deviceText = Ui.S("Osiloskop bulunamadı – bekleniyor…", "Oscilloscope not found – waiting…");
+                            connected = false; deviceState = 2;
                             Thread.Sleep(1000);
                             continue;
                         }
                         u.Clear(); u.SetTimeout(3000);
                         string idn = u.QueryText("*IDN?");
                         dl = Dialect.Pick(c.DialectIdx, idn);
-                        deviceText = ShortIdn(idn);
+                        deviceIdn = idn; deviceState = 1;
                         connected = true;
-                        Log(Ui.S("Bağlandı: ", "Connected: ") + deviceText + Ui.S("  –  komut seti: ", "  –  command set: ") + dl.Name);
+                        Log(Ui.S("Bağlandı: ", "Connected: ") + ShortIdn(idn) + Ui.S("  –  komut seti: ", "  –  command set: ") + dl.Name);
                     }
                     string shot = shotRequest;
                     if (shot != null) { shotRequest = null; Shot(u, dl, shot); }
@@ -1236,7 +1239,7 @@ partial class MainForm : Form
                     if (errs >= 3 && u != null)
                     {
                         u.Dispose(); u = null;
-                        connected = false; deviceText = Ui.S("Bağlantı koptu – yeniden deneniyor…", "Connection lost – retrying…");
+                        connected = false; deviceState = 3;
                         Thread.Sleep(1000);
                     }
                     else if (u != null)
@@ -1259,6 +1262,18 @@ partial class MainForm : Form
         }
     }
 
+    string DeviceText()
+    {
+        switch (deviceState)
+        {
+            case 1: return ShortIdn(deviceIdn);
+            case 2: return Ui.S("Osiloskop bulunamadı – bekleniyor…", "Oscilloscope not found – waiting…");
+            case 3: return Ui.S("Bağlantı koptu – yeniden deneniyor…", "Connection lost – retrying…");
+            case 4: return Ui.S("Osiloskop bulunamadı (bağlı mı, başka program kullanıyor mu?)", "Oscilloscope not found (is it connected, is another program using it?)");
+        }
+        return "";
+    }
+
     static string ShortIdn(string idn)
     {
         string[] p = idn.Split(',');
@@ -1273,10 +1288,10 @@ partial class MainForm : Form
             using (ILink u = OpenLink(c))
             {
                 if (u == null && running) return false; // cihaz olcum is parcaciginda acik; durum yazisini bozma
-                if (u == null) { connected = false; deviceText = Ui.S("Osiloskop bulunamadı (bağlı mı, başka program kullanıyor mu?)", "Oscilloscope not found (is it connected, is another program using it?)"); return false; }
+                if (u == null) { connected = false; deviceState = 4; return false; }
                 u.Clear(); u.SetTimeout(3000);
                 string idn = u.QueryText("*IDN?");
-                deviceText = ShortIdn(idn);
+                deviceIdn = idn; deviceState = 1;
                 connected = true;
                 if (act != null) act(u, Dialect.Pick(c.DialectIdx, idn));
                 return true;
@@ -1356,6 +1371,7 @@ partial class MainForm : Form
             }
         if (!running && uiRunning) StopMeasure(); // is parcacigi kendi durduysa
 
+        string deviceText = DeviceText();
         lblDevice.Text = deviceText.Length > 0 ? "● " + deviceText : "";
         lblDevice.ForeColor = connected ? Ui.Th.Good : Ui.Th.Bad;
 
@@ -1792,8 +1808,8 @@ partial class MainForm : Form
                 return;
             }
             if (mode == "defaults") { testNoAsk = true; ResetDefaults(); }
-            if (mode == "toggle") { cmbLang.SelectedIndex = 1 - cmbLang.SelectedIndex; Application.DoEvents(); cmbTheme.SelectedIndex = 1 - cmbTheme.SelectedIndex; Application.DoEvents(); }
-            if (mode != "seronly") StartMeasure(); // "seronly": yalnizca seri port, olcum yok
+            if (mode.StartsWith("toggle")) { cmbLang.SelectedIndex = 1 - cmbLang.SelectedIndex; Application.DoEvents(); cmbTheme.SelectedIndex = 1 - cmbTheme.SelectedIndex; Application.DoEvents(); }
+            if (mode != "seronly" && mode != "toggleonly") StartMeasure(); // "seronly": yalnizca seri port, olcum yok
             System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
             t.Interval = seconds * 1000;
             t.Tick += delegate
