@@ -543,8 +543,10 @@ class Series:
     maxv: float = -math.inf
     total: float = 0.0
     count: int = 0
+    revision: int = 0
 
     def add(self, t, value):
+        self.revision += 1
         self.times.append(t)
         self.values.append(value)
         if len(self.times) > 200000:
@@ -809,6 +811,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.recorder = None
         self.running = False
         self.dirty_plot = False
+        self.plot_interacting = False
+        self.plot_revisions = {}
+        self.interaction_timer = QtCore.QTimer(self)
+        self.interaction_timer.setSingleShot(True)
+        self.interaction_timer.setInterval(160)
+        self.interaction_timer.timeout.connect(self._finish_plot_interaction)
         self.follow_plot = True
         self.current_t = 0.0
         self.out_of_limit = False
@@ -1280,6 +1288,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _prepare_series(self):
         self.series.clear()
         self.curves.clear()
+        self.plot_revisions.clear()
         self.plot.clear()
         self.limit_series.clear()
         idx = 0
@@ -1288,7 +1297,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 key = f"{ch}_{code}"
                 color = COLORS[idx % len(COLORS)]
                 self.series[key] = Series(key, PARAM_UNITS.get(code, ""), color)
-                self.curves[key] = self.plot.plot([], [], pen=pg.mkPen(color, width=2), name=key)
+                self.curves[key] = self.plot.plot([], [], pen=pg.mkPen(color, width=1), antialias=False, name=key)
                 self.curves[key].setDownsampling(auto=True, method="peak")
                 self.curves[key].setClipToView(True)
                 self.limit_series.addItem(key)
@@ -1401,6 +1410,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.recorder.event(t, "normale dondu", value, f"{t - self.out_since:.2f}")
 
     def _refresh_stats(self):
+        if self.plot_interacting:
+            return
         if self.dirty_plot:
             self._redraw_plot()
         for row, key in enumerate(self.series):
@@ -1408,7 +1419,7 @@ class MainWindow(QtWidgets.QMainWindow):
             vals = [fmt_value(s.last, s.unit), fmt_value(s.minv, s.unit), fmt_value(s.maxv, s.unit), fmt_value(s.avg, s.unit)]
             for col, text in enumerate(vals, 1):
                 item = self.stats_table.item(row, col)
-                if item:
+                if item and item.text() != text:
                     item.setText(text)
         if self.series:
             self.status.showMessage(f"Okuma: {self.sample_count}  Limit dışı: {self.violation_count}")
@@ -1416,8 +1427,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _redraw_plot(self):
         for key, curve in self.curves.items():
             s = self.series.get(key)
-            if s:
+            if s and self.plot_revisions.get(key) != s.revision:
                 curve.setData(s.times, s.values)
+                self.plot_revisions[key] = s.revision
         if self.follow_plot and self.current_t > 0:
             window = self.window_spin.value()
             self.plot.setXRange(max(0, self.current_t - window), max(window, self.current_t), padding=0)
@@ -1429,11 +1441,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self._redraw_plot()
 
     def _manual_plot_range(self, *args):
+        self.plot_interacting = True
+        self.interaction_timer.start()
         if self.follow_check.isChecked():
             self.follow_check.blockSignals(True)
             self.follow_check.setChecked(False)
             self.follow_check.blockSignals(False)
         self.follow_plot = False
+
+    def _finish_plot_interaction(self):
+        self.plot_interacting = False
+        self._refresh_stats()
 
     def shift_plot(self, fraction):
         self.follow_check.setChecked(False)
@@ -1528,7 +1546,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if full not in self.series:
                 color = COLORS[len(self.series) % len(COLORS)]
                 self.series[full] = Series(full, "", color)
-                self.curves[full] = self.plot.plot([], [], pen=pg.mkPen(color, width=1, style=QtCore.Qt.DotLine), name=full)
+                self.curves[full] = self.plot.plot([], [], pen=pg.mkPen(color, width=1, style=QtCore.Qt.DotLine), antialias=False, name=full)
                 self.curves[full].setDownsampling(auto=True, method="peak")
                 self.curves[full].setClipToView(True)
             self.series[full].add(t, value)
@@ -1562,7 +1580,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 for i, h in enumerate(header[2:], 2):
                     ys[h].append(safe_float(row[i]) if i < len(row) else math.nan)
             for i, (key, vals) in enumerate(ys.items()):
-                self.viewer_plot.plot(xs, vals, pen=pg.mkPen(COLORS[i % len(COLORS)], width=2), name=key)
+                self.viewer_plot.plot(xs, vals, pen=pg.mkPen(COLORS[i % len(COLORS)], width=1), antialias=False, autoDownsample=True, clipToView=True, name=key)
             base = str(Path(path).with_suffix(""))
             log_path = base + "_log.txt"
             if os.path.exists(log_path):

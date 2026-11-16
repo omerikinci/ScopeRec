@@ -87,6 +87,24 @@ class ConnectionTests(unittest.TestCase):
             tabs_top = self.window.right_tabs.mapTo(self.window.centralWidget(), scope.QtCore.QPoint()).y()
             self.assertLess(self.window.theme.geometry().bottom(), tabs_top)
 
+    def test_navigation_keeps_samples_and_defers_display_updates(self):
+        self.window._prepare_series()
+        key = next(iter(self.window.series))
+        self.window.on_sample(1, {key: 0.008})
+        self.window._refresh_stats()
+        self.window._manual_plot_range()
+        self.window.on_sample(2, {key: 0.016})
+        self.window._refresh_stats()
+        self.assertEqual(self.window.series[key].values, [0.008, 0.016])
+        self.assertEqual(len(self.window.curves[key].yData), 1)
+        self.window._finish_plot_interaction()
+        self.assertEqual(len(self.window.curves[key].yData), 2)
+        self.assertFalse(self.window.follow_plot)
+        self.window._prepare_series()
+        self.window.on_sample(1, {key: 0.024})
+        self.window._refresh_stats()
+        self.assertAlmostEqual(self.window.curves[key].yData[0], 0.024)
+
 
 if __name__ == "__main__":
     unittest.main()
