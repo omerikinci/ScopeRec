@@ -89,6 +89,43 @@ ScopeCli.exe --tcp 5025              TCP köprüsü
 
 `ScopeCli-olcum.bat` ve `ScopeCli-terminal.bat` bu aracı çift tıklamayla başlatır.
 
+### macOS komut satırı sürümü
+
+macOS'ta Windows Forms arayüzü ve WinUSB tabanlı USB bağlantısı desteklenmez. `ScopeCli` macOS'ta ağ/SCPI bağlantısıyla çalışır; osiloskopta LAN soketini açıp IP adresini kullanın (çoğu cihazda port `5025`, Rigol'de bazen `5555`).
+
+Derleme:
+
+```
+./build-mac.sh
+```
+
+Kullanım örnekleri:
+
+```
+./dist/mac-osx-arm64/ScopeCli --lan 192.168.1.50 "*IDN?"
+./dist/mac-osx-arm64/ScopeCli --lan 192.168.1.50 --meas C1:RMS,PKPK,PER --interval 250 --csv olcum.csv
+./dist/mac-osx-arm64/ScopeCli --lan 192.168.1.50:5555
+```
+
+Intel Mac'te çıktı klasörü `dist/mac-osx-x64` olur.
+
+## Yeni macOS uygulaması
+
+macOS için sıfırdan yazılmış yerel uygulama `mac_app` klasöründedir. Eski Windows Forms arayüzünü macOS'a taşımak yerine PySide6/Qt tabanlı yeni bir mimari kullanır.
+
+```
+./mac_app/run-mac.sh
+```
+
+Çift tıklanabilir paket üretmek için:
+
+```
+./mac_app/build-mac-app.sh
+open dist/ScopeRecMac.app
+```
+
+Bu sürüm LAN/SCPI üzerinden ölçüm yapar; ayrıca USB Test & Measurement sınıfındaki cihazlar için libusb/PyUSB tabanlı USB kablo bağlantısını dener. macOS'ta USB erişimi cihaza ve izinlere bağlı olduğundan en sorunsuz yol çoğu durumda LAN/SCPI bağlantısıdır.
+
 ## Klasör düzeni
 
 | Dosya / klasör | İçerik |
@@ -97,6 +134,8 @@ ScopeCli.exe --tcp 5025              TCP köprüsü
 | `ScopeView.exe` | Kayıt görüntüleyici |
 | `ScopeCli.exe` | Komut satırı aracı |
 | `build.bat` | Üç programı Windows ile gelen C# derleyicisiyle derler; başka kurulum gerekmez |
+| `build-mac.sh` | macOS için `ScopeCli` tek dosya çalıştırılabilirini üretir |
+| `ScopeCli.Mac.csproj` | macOS / .NET 8 komut satırı derleme projesi |
 | `src\` | Kaynak kod ve uygulama ikonları |
 | `logo\` | Logo görselleri |
 | `kayitlar\` | Varsayılan kayıt klasörü (depoya girmez) |

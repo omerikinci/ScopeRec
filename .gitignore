@@ -3,3 +3,11 @@ kayitlar/
 olcum_*.csv
 ayarlar.ini
 *.eski.exe
+bin/
+obj/
+dist/
+.venv-macapp/
+__pycache__/
+*.pyc
+*.spec
+build/

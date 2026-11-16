@@ -76,16 +76,16 @@ static class Program
     // Yeni bir veri turu (ornegin ham dalga sekli kaydi) eklemek icin bu arayuzu uygulayip HandleLine'a komut eklemek yeterli.
     interface ISource
     {
-        string[] Start(Usb u, Action<string> say); // sutun adlarini dondurur
-        string[] Sample(Usb u);
+        string[] Start(ILink u, Action<string> say); // sutun adlarini dondurur
+        string[] Sample(ILink u);
     }
 
     sealed class QuerySource : ISource
     {
         readonly string query;
         public QuerySource(string q) { query = q; }
-        public string[] Start(Usb u, Action<string> say) { return new string[] { "cevap" }; }
-        public string[] Sample(Usb u) { return new string[] { Text(u.Query(query)) }; }
+        public string[] Start(ILink u, Action<string> say) { return new string[] { "cevap" }; }
+        public string[] Sample(ILink u) { return new string[] { Text(u.Query(query)) }; }
     }
 
     // Osiloskobun kendi olcumleri (PAVA). Tanim: "C1:RMS,PKPK,PER C2:FREQ"
@@ -135,7 +135,7 @@ static class Program
             foreach (Group g in groups) if (g.Params.Count == 0) g.Params.AddRange(Default);
         }
 
-        public string[] Start(Usb u, Action<string> say)
+        public string[] Start(ILink u, Action<string> say)
         {
             List<string> cols = new List<string>();
             foreach (Group g in groups) foreach (string p in g.Params) cols.Add(g.Ch + "_" + p + Unit(p));
@@ -149,7 +149,7 @@ static class Program
             return m.Success ? Val(double.Parse(m.Value, Inv), 4) : "";
         }
 
-        public string[] Sample(Usb u)
+        public string[] Sample(ILink u)
         {
             List<string> vals = new List<string>();
             foreach (Group g in groups)
@@ -180,7 +180,7 @@ static class Program
         long frame;
         public WaveSource(string channel) { ch = channel; }
 
-        public string[] Start(Usb u, Action<string> say)
+        public string[] Start(ILink u, Action<string> say)
         {
             vdiv = Num(u.QueryText(ch + ":VDIV?"));
             ofst = Num(u.QueryText(ch + ":OFST?"));
@@ -189,7 +189,7 @@ static class Program
             return new string[] { "nokta", "min[V]", "max[V]", "ort[V]" };
         }
 
-        public string[] Sample(Usb u)
+        public string[] Sample(ILink u)
         {
             byte[] r = u.Query(ch + ":WF? DAT2");
             int hash = Array.IndexOf(r, (byte)'#');
@@ -222,7 +222,7 @@ static class Program
         }
     }
 
-    static void Run(Usb u, ISource src, int ms, Action<string> say, Func<bool> stop)
+    static void Run(ILink u, ISource src, int ms, Action<string> say, Func<bool> stop)
     {
         // Sorgular arka arkaya gelirse SDS1104X-E yeni yakalama yapamiyor: ekran donuyor ve hep ayni deger donuyor.
         // Olcumle bulunan esik ~30 ms; altina inilmesin.
@@ -274,7 +274,7 @@ static class Program
         "  !help                bu yardim\r\n" +
         "Dongu, yeni bir satir/tus gelince durur.";
 
-    static void HandleLine(Usb u, string line, Action<string> say, Action<byte[]> reply, Func<bool> stop)
+    static void HandleLine(ILink u, string line, Action<string> say, Action<byte[]> reply, Func<bool> stop)
     {
         line = line.Trim();
         if (line.Length == 0) return;
@@ -336,14 +336,14 @@ static class Program
         return false;
     }
 
-    static void ConsoleLine(Usb u, string line)
+    static void ConsoleLine(ILink u, string line)
     {
         cancel = false;
         HandleLine(u, line, Console.WriteLine, delegate(byte[] r) { Console.WriteLine(Text(r)); }, ConsoleStop);
     }
 
     // Seri port ya da TCP ucundan gelen satirlari osiloskopa aktarir (Termite vb. icin).
-    static void Bridge(Usb u, Func<int> readByte, Func<bool> pending, Action<byte[]> write)
+    static void Bridge(ILink u, Func<int> readByte, Func<bool> pending, Action<byte[]> write)
     {
         Action<string> say = delegate(string s) { write(Encoding.ASCII.GetBytes(s + "\r\n")); };
         StringBuilder sb = new StringBuilder();
@@ -373,28 +373,45 @@ static class Program
     static int Usage()
     {
         Console.WriteLine(
-            "ScopeCli.exe                         etkilesimli SCPI terminali\r\n" +
-            "ScopeCli.exe \"*IDN?\"                 tek komut/sorgu\r\n" +
-            "ScopeCli.exe --meas C1:RMS,PKPK,PER  olcumleri durmadan oku (Ctrl+C ile dur); cok kanal: C1:RMS C2:FREQ\r\n" +
-            "ScopeCli.exe --loop \"C1:PAVA? MEAN\"  herhangi bir sorguyu durmadan tekrarla\r\n" +
-            "ScopeCli.exe --wave C1               dalga seklini durmadan cek\r\n" +
-            "ScopeCli.exe --com COM11             seri port koprusu (Termite icin, com0com cifti gerekir)\r\n" +
-            "ScopeCli.exe --tcp 5025              TCP koprusu (127.0.0.1)\r\n" +
-            "Secenekler: --interval <ms>  --csv <dosya>  --dump <klasor> (her kareyi CSV yaz)  --timeout <ms>\r\n");
+            "ScopeCli                         etkilesimli SCPI terminali\r\n" +
+            "ScopeCli \"*IDN?\"                 tek komut/sorgu\r\n" +
+            "ScopeCli --lan 192.168.1.50 \"*IDN?\" ag uzerinden tek sorgu (varsayilan port 5025)\r\n" +
+            "ScopeCli --lan 192.168.1.50:5555 --meas C1:RMS,PKPK,PER  olcumleri durmadan oku\r\n" +
+            "ScopeCli --loop \"C1:PAVA? MEAN\"  herhangi bir sorguyu durmadan tekrarla\r\n" +
+            "ScopeCli --wave C1               dalga seklini durmadan cek\r\n" +
+            "ScopeCli --com COM11             seri port koprusu (Windows: com0com cifti gerekir)\r\n" +
+            "ScopeCli --tcp 5025              TCP koprusu (127.0.0.1)\r\n" +
+            "Secenekler: --lan <adres[:port]>  --interval <ms>  --csv <dosya>  --dump <klasor>  --timeout <ms>\r\n");
         return 1;
+    }
+
+    static ILink OpenLink(string lanAddress)
+    {
+        if (!string.IsNullOrEmpty(lanAddress))
+        {
+            ILink link = TcpLink.Open(lanAddress, timeout);
+            if (link == null) Console.Error.WriteLine("Ag cihazi acilamadi: " + lanAddress);
+            return link;
+        }
+
+        ILink usb = Usb.Open(timeout);
+        if (usb == null)
+            Console.Error.WriteLine("USB cihazi acilamadi. macOS'ta USBTMC/WinUSB desteklenmez; --lan <ip[:port]> kullanin.");
+        return usb;
     }
 
     static int Main(string[] args)
     {
         string mode = "", target = "";
         int interval = 0;
-        string csvPath = null;
+        string csvPath = null, lanAddress = null;
         for (int i = 0; i < args.Length; i++)
         {
             string a = args[i];
             bool more = i + 1 < args.Length;
             if (a == "--meas") { mode = a; target = ""; while (i + 1 < args.Length && !args[i + 1].StartsWith("--")) target += " " + args[++i]; }
             else if ((a == "--loop" || a == "--wave" || a == "--com" || a == "--tcp") && more) { mode = a; target = args[++i]; }
+            else if ((a == "--lan" || a == "--addr") && more) lanAddress = args[++i];
             else if (a == "--interval" && more) interval = int.Parse(args[++i], Inv);
             else if (a == "--timeout" && more) timeout = uint.Parse(args[++i], Inv);
             else if (a == "--csv" && more) csvPath = args[++i];
@@ -403,13 +420,9 @@ static class Program
             else { mode = "once"; target = a; }
         }
 
-        using (Usb u = Usb.Open(timeout))
+        using (ILink u = OpenLink(lanAddress))
         {
-            if (u == null)
-            {
-                Console.Error.WriteLine("Siglent cihazi acilamadi (bagli mi, WinUSB surucusu kurulu mu, baska program kullaniyor mu?)");
-                return 2;
-            }
+            if (u == null) return 2;
             u.Clear();
             u.SetTimeout(timeout);
             Console.CancelKeyPress += delegate(object s, ConsoleCancelEventArgs e) { if (!cancel) { cancel = true; e.Cancel = true; } };
