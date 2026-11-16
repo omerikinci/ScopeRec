@@ -110,8 +110,18 @@ partial class MainForm
         Controls.Add(serPanel);
 
         btnSerToggle = new Button();
-        btnSerToggle.Text = Ui.S("Seri port", "Serial port"); btnSerToggle.SetBounds(1200, 14, 86, 30);
-        btnSerToggle.Click += delegate { serPanelOn = !serPanelOn; serPanel.Visible = serSplit.Visible = serPanelOn; };
+        btnSerToggle.Text = Ui.S("Seri yan panel", "Serial panel");
+        btnSerToggle.Size = new Size(112, 30);
+        btnSerToggle.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        EventHandler placeToggle = delegate { btnSerToggle.Left = Math.Max(10, topBar.ClientSize.Width - lblDevice.Width - btnSerToggle.Width - 12); };
+        placeToggle(null, null);
+        topBar.Resize += placeToggle;
+        btnSerToggle.Click += delegate
+        {
+            serPanelOn = !serPanelOn;
+            serPanel.Visible = serSplit.Visible = serPanelOn;
+            btnSerToggle.BackColor = serPanelOn ? Ui.Th.Card : Ui.Th.Input;
+        };
         topBar.Controls.Add(btnSerToggle);
         btnSerToggle.BringToFront();
 
@@ -273,6 +283,7 @@ partial class MainForm
             try { SetWindowTheme(s.KeyList.Handle, "DarkMode_Explorer", null); SetWindowTheme(s.Log.Handle, "DarkMode_Explorer", null); } catch (Exception) { }
         }
         SerialTabs(); // sekme dugmelerinin renkleri genel boyamadan sonra verilir
+        if (btnSerToggle != null) btnSerToggle.BackColor = serPanelOn ? t.Card : t.Input;
     }
 
     void FillPorts(SerSession s)

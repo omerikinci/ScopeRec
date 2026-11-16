@@ -892,8 +892,11 @@ class MainWindow(QtWidgets.QMainWindow):
         for i, btn in enumerate([self.start_btn, self.pause_btn, self.end_btn, self.mark_btn, self.shot_btn, self.chart_btn]):
             buttons.addWidget(btn, i // 2, i % 2)
 
+        work_split = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        split.addWidget(work_split)
         right_tabs = QtWidgets.QTabWidget()
-        split.addWidget(right_tabs)
+        self.right_tabs = right_tabs
+        work_split.addWidget(right_tabs)
         split.setSizes([360, 1080])
 
         live = QtWidgets.QWidget()
@@ -958,11 +961,44 @@ class MainWindow(QtWidgets.QMainWindow):
 
         serial_tab = QtWidgets.QWidget()
         serial_lay = QtWidgets.QVBoxLayout(serial_tab)
+        serial_header = QtWidgets.QHBoxLayout()
+        serial_header.addWidget(QtWidgets.QLabel("Seri port"))
+        serial_header.addStretch(1)
+        self.serial_side_btn = QtWidgets.QPushButton("Sağ panelde göster")
+        self.serial_side_btn.setCheckable(True)
+        self.serial_side_btn.toggled.connect(self._set_serial_side_panel)
+        serial_header.addWidget(self.serial_side_btn)
+        serial_lay.addLayout(serial_header)
+        self.serial_tab_host = QtWidgets.QWidget()
+        self.serial_tab_host_lay = QtWidgets.QVBoxLayout(self.serial_tab_host)
+        self.serial_tab_host_lay.setContentsMargins(0, 0, 0, 0)
         self.serial_tabs = QtWidgets.QTabWidget()
-        serial_lay.addWidget(self.serial_tabs)
+        self.serial_tab_host_lay.addWidget(self.serial_tabs)
+        serial_lay.addWidget(self.serial_tab_host, 1)
         for i in range(3):
             self._add_serial_tab(i)
         right_tabs.addTab(serial_tab, "Seri port")
+
+        self.serial_side = QtWidgets.QFrame()
+        self.serial_side.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self.serial_side.setMinimumWidth(360)
+        side_lay = QtWidgets.QVBoxLayout(self.serial_side)
+        side_head = QtWidgets.QHBoxLayout()
+        side_title = QtWidgets.QLabel("Seri port")
+        side_title.setStyleSheet("font-weight: 700")
+        side_close = QtWidgets.QPushButton("Sekmeye al")
+        side_close.clicked.connect(lambda: self._set_serial_side_panel(False))
+        side_head.addWidget(side_title)
+        side_head.addStretch(1)
+        side_head.addWidget(side_close)
+        side_lay.addLayout(side_head)
+        self.serial_side_host = QtWidgets.QWidget()
+        self.serial_side_host_lay = QtWidgets.QVBoxLayout(self.serial_side_host)
+        self.serial_side_host_lay.setContentsMargins(0, 0, 0, 0)
+        side_lay.addWidget(self.serial_side_host, 1)
+        self.serial_side.hide()
+        work_split.addWidget(self.serial_side)
+        work_split.setSizes([900, 420])
 
         viewer = QtWidgets.QWidget()
         viewer_lay = QtWidgets.QVBoxLayout(viewer)
@@ -986,6 +1022,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setStatusBar(self.status)
         self.status.showMessage("Hazır")
         self._connection_changed()
+
+    def _set_serial_side_panel(self, enabled):
+        if not hasattr(self, "serial_tabs"):
+            return
+        self.serial_tabs.setParent(None)
+        if enabled:
+            self.serial_side_host_lay.addWidget(self.serial_tabs)
+            self.serial_side.show()
+            self.right_tabs.setCurrentIndex(0)
+        else:
+            self.serial_tab_host_lay.addWidget(self.serial_tabs)
+            self.serial_side.hide()
+        if self.serial_side_btn.isChecked() != enabled:
+            self.serial_side_btn.blockSignals(True)
+            self.serial_side_btn.setChecked(enabled)
+            self.serial_side_btn.blockSignals(False)
 
     def _add_serial_tab(self, idx):
         page = QtWidgets.QWidget()
@@ -1398,6 +1450,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.dir_label.setText(data.get("record_dir", self.record_dir))
             self.interval.setValue(int(data.get("interval", 250)))
             self.theme.setCurrentText(data.get("theme", "dark"))
+            self._set_serial_side_panel(bool(data.get("serial_side_panel", False)))
         except Exception:
             pass
 
@@ -1409,6 +1462,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "record_dir": self.dir_label.text(),
             "interval": self.interval.value(),
             "theme": self.theme.currentText(),
+            "serial_side_panel": self.serial_side.isVisible(),
         }
         try:
             self.settings_path.write_text(json.dumps(data, indent=2))

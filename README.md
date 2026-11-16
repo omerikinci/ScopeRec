@@ -49,7 +49,7 @@ COM portundan veri gönderen cihazları ölçümle aynı pencerede izlersiniz.
 - Kayıt: ölçüm kaydı açıkken satırlar `<ölçüm adı>_seri.txt` dosyasına, ölçüm yokken `seri_<port>_<tarih>.txt` dosyasına yazılır (saat, t, satır; sekmeyle ayrık)
 - DTR / RTS varsayılan olarak kapalıdır; böylece çalışan bir Arduino'ya bağlanınca kart yeniden başlamaz
 - Port kutusuna `tcp://adres:port` yazılarak ağ üzerinden seri köprülere de bağlanılabilir
-- Üst çubuktaki **Seri port** düğmesi paneli gizler / gösterir; port, hız ve grafikte gösterilen değerler hatırlanır
+- Üst çubuktaki **Seri yan panel** düğmesi seri terminali canlı ölçümle yan yana sağ panel olarak gizler / gösterir; panelin içindeki 1 / 2 / 3 sekmeleri ayrı seri bağlantılar olarak kalır. Port, hız ve grafikte gösterilen değerler hatırlanır
 
 ScopeView, ölçüm dosyasının yanındaki `…_seri.txt` kaydını kendiliğinden açar ve seri değerleri ölçümle aynı grafikte gösterir;
 yalnızca seri kayıt dosyası bırakılırsa onu tek başına açar.
@@ -111,7 +111,7 @@ Intel Mac'te çıktı klasörü `dist/mac-osx-x64` olur.
 
 ## Yeni macOS uygulaması
 
-macOS için sıfırdan yazılmış yerel uygulama `mac_app` klasöründedir. Eski Windows Forms arayüzünü macOS'a taşımak yerine PySide6/Qt tabanlı yeni bir mimari kullanır.
+macOS için sıfırdan yazılmış yerel uygulama `mac_app` klasöründedir. Eski Windows Forms arayüzünü macOS'a taşımak yerine PySide6/Qt tabanlı yeni bir mimari kullanır. Seri port sekmesi istenirse canlı ölçümün sağında yan panel olarak da açılabilir.
 
 ```
 ./mac_app/run-mac.sh
