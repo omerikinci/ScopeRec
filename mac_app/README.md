@@ -8,6 +8,8 @@ Bu klasör macOS için sıfırdan yazılmış ScopeRec uygulamasını içerir. W
 ./mac_app/run-mac.sh
 ```
 
+Üst satırdaki **Osiloskopa bağlan** cihaz kimliğini okuyup bağlantıyı açar. **Başlat** bu bağlantıdan canlı ölçümü başlatır. **Bağlantıyı kes** bağlantıyı kapatır. Tema ve okuma aralığı ikinci satırdadır.
+
 ## Paketleme
 
 ```bash

@@ -269,7 +269,6 @@ class UsbTmcClient:
         self.intf = None
         self.ep_in = None
         self.ep_out = None
-        self.in_packet_size = 64
         for intf in self.cfg:
             if intf.bInterfaceClass == 0xFE and intf.bInterfaceSubClass == 3:
                 self.intf = intf
@@ -287,7 +286,6 @@ class UsbTmcClient:
                 continue
             if usb.util.endpoint_direction(ep.bEndpointAddress) == usb.util.ENDPOINT_IN:
                 self.ep_in = ep
-                self.in_packet_size = max(64, int(getattr(ep, "wMaxPacketSize", 64)))
             else:
                 self.ep_out = ep
         if self.ep_in is None or self.ep_out is None:
@@ -387,13 +385,17 @@ class UsbTmcClient:
                 if len(raw) < 12 or raw[0] != 2:
                     raise ScpiError("USBTMC senkron hatası")
                 size = int.from_bytes(raw[4:8], "little")
+                if size > self.READ_PAYLOAD:
+                    raise ScpiError("USBTMC cevap boyutu istenen sınırı aşıyor")
                 eom = bool(raw[8] & 1)
                 got = min(len(raw) - 12, size)
                 if raw[1] == tag:
                     out.extend(raw[12:12 + got])
                     while got < size:
-                        read_len = min(self.READ_PACKET, max(self.in_packet_size, size - got))
+                        read_len = self.READ_PACKET
                         chunk = bytes(self.ep_in.read(read_len, self.timeout_ms))
+                        if not chunk:
+                            raise ScpiError("USBTMC eksik veri")
                         take = min(len(chunk), size - got)
                         out.extend(chunk[:take])
                         got += take
@@ -412,11 +414,30 @@ class UsbTmcClient:
         return self.query(cmd).decode("ascii", "replace").strip("\r\n\0 ")
 
     def clear(self):
-        for _ in range(16):
+        for _ in range(1024):
             try:
                 self.ep_in.read(self.READ_PACKET, 50)
             except Exception:
                 break
+        interface = self.intf.bInterfaceNumber
+        try:
+            result = self.dev.ctrl_transfer(0xA1, 5, 0, interface, 1, timeout=500)
+            if result and result[0] == 1:
+                for _ in range(50):
+                    state = self.dev.ctrl_transfer(0xA1, 6, 0, interface, 2, timeout=500)
+                    if state[0] != 2:
+                        break
+                    if len(state) > 1 and state[1] & 1:
+                        try:
+                            self.ep_in.read(self.READ_PACKET, 50)
+                        except usb.core.USBTimeoutError:
+                            pass
+                    else:
+                        time.sleep(0.01)
+            self.dev.clear_halt(self.ep_in.bEndpointAddress)
+            self.dev.clear_halt(self.ep_out.bEndpointAddress)
+        except usb.core.USBError:
+            pass
 
 
 def open_instrument(config):
@@ -586,6 +607,28 @@ class Recorder:
                 f.close()
             except Exception:
                 pass
+
+
+class ConnectionWorker(QtCore.QThread):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.client = None
+        self.idn = ""
+        self.error = ""
+
+    def run(self):
+        try:
+            self.client = open_instrument(self.config)
+            self.client.clear()
+            self.idn = self.client.query_text("*IDN?")
+            if not self.idn:
+                raise ScpiError("Cihaz kimliği alınamadı")
+        except Exception as exc:
+            self.error = str(exc)
+            if self.client:
+                self.client.close()
+                self.client = None
 
 
 class MeasurementWorker(QtCore.QThread):
@@ -760,6 +803,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.serial_logs = {}
         self.mark_lines = []
         self.worker = None
+        self.connection_worker = None
+        self.idle_client = None
+        self.instrument_id = ""
         self.recorder = None
         self.running = False
         self.dirty_plot = False
@@ -772,7 +818,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.record_dir = str(Path.cwd() / "kayitlar")
         self._build_ui()
         self._load_settings()
-        self._apply_theme("dark")
+        self._apply_theme(self.theme.currentData())
         self.ui_timer = QtCore.QTimer(self)
         self.ui_timer.timeout.connect(self._refresh_stats)
         self.ui_timer.start(250)
@@ -785,6 +831,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         top = QtWidgets.QHBoxLayout()
         root.addLayout(top)
+        options = QtWidgets.QHBoxLayout()
+        root.addLayout(options)
         self.conn_lan = QtWidgets.QRadioButton("LAN")
         self.conn_usb = QtWidgets.QRadioButton("USB")
         self.conn_lan.setChecked(True)
@@ -807,10 +855,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.interval.setValue(250)
         self.interval.setSuffix(" ms")
         self.theme = QtWidgets.QComboBox()
-        self.theme.addItems(["dark", "light"])
-        self.theme.currentTextChanged.connect(self._apply_theme)
+        self.theme.addItem("Koyu", "dark")
+        self.theme.addItem("Açık", "light")
+        self.theme.setMinimumWidth(120)
+        self.theme.currentIndexChanged.connect(lambda: self._apply_theme(self.theme.currentData()))
+        self.dialect.setMinimumWidth(180)
+        self.interval.setMinimumWidth(125)
         top.addWidget(QtWidgets.QLabel("Bağlantı"))
         conn_row = QtWidgets.QHBoxLayout()
+        conn_row.setContentsMargins(0, 0, 0, 0)
         conn_row.setSpacing(8)
         conn_row.addWidget(self.conn_lan)
         conn_row.addWidget(self.conn_usb)
@@ -822,12 +875,18 @@ class MainWindow(QtWidgets.QMainWindow):
         top.addWidget(self.address, 2)
         top.addWidget(self.usb_selector, 2)
         top.addWidget(self.usb_refresh)
-        top.addWidget(QtWidgets.QLabel("Komut seti"))
-        top.addWidget(self.dialect)
-        top.addWidget(QtWidgets.QLabel("Aralık"))
-        top.addWidget(self.interval)
-        top.addWidget(QtWidgets.QLabel("Tema"))
-        top.addWidget(self.theme)
+        self.connect_btn = QtWidgets.QPushButton("Osiloskopa bağlan")
+        self.connect_btn.clicked.connect(self.toggle_instrument)
+        top.addWidget(self.connect_btn)
+        options.addWidget(QtWidgets.QLabel("Komut seti"))
+        options.addWidget(self.dialect)
+        options.addWidget(QtWidgets.QLabel("Aralık"))
+        options.addWidget(self.interval)
+        options.addWidget(QtWidgets.QLabel("Tema"))
+        options.addWidget(self.theme)
+        self.connection_state = QtWidgets.QLabel("Bağlı değil")
+        self.connection_state.setWordWrap(True)
+        options.addWidget(self.connection_state, 1)
 
         split = QtWidgets.QSplitter()
         root.addWidget(split, 1)
@@ -1114,6 +1173,56 @@ class MainWindow(QtWidgets.QMainWindow):
     def connection_mode(self):
         return "USB" if self.conn_usb.isChecked() else "LAN"
 
+    def connection_config(self):
+        return {"connection": self.connection_mode(),
+                "address": self.address.text().strip(),
+                "usb_selector": self.usb_selector.currentText().strip()}
+
+    def _connection_controls(self, enabled):
+        for control in (self.conn_usb, self.conn_lan, self.address,
+                        self.usb_selector, self.usb_refresh, self.dialect):
+            control.setEnabled(enabled)
+
+    def toggle_instrument(self):
+        if self.worker:
+            self.pause_measure()
+            return
+        if self.idle_client:
+            self.idle_client.close()
+            self.idle_client = None
+            self.instrument_id = ""
+            self.connection_state.setText("Bağlı değil")
+            self.connect_btn.setText("Osiloskopa bağlan")
+            self._connection_controls(True)
+            return
+        if self.connection_worker:
+            return
+        self._connection_controls(False)
+        self.connect_btn.setEnabled(False)
+        self.start_btn.setEnabled(False)
+        self.connection_state.setText("Bağlanıyor…")
+        self.connection_worker = ConnectionWorker(self.connection_config())
+        self.connection_worker.finished.connect(self._instrument_ready)
+        self.connection_worker.start()
+
+    def _instrument_ready(self):
+        probe = self.connection_worker
+        self.idle_client = probe.client
+        self.instrument_id = probe.idn
+        error = probe.error
+        self.connection_worker = None
+        probe.deleteLater()
+        self.connect_btn.setEnabled(True)
+        self.start_btn.setEnabled(True)
+        if self.idle_client:
+            self.connection_state.setText("Bağlandı: " + self.instrument_id)
+            self.connect_btn.setText("Bağlantıyı kes")
+            self.append_log("Bağlandı: " + self.instrument_id)
+        else:
+            self.connection_state.setText("Bağlantı kurulamadı: " + error)
+            self.append_log("Bağlantı hatası: " + error)
+            self._connection_controls(True)
+
     def _connection_changed(self, *args):
         is_usb = self.connection_mode() == "USB"
         self.address.setVisible(not is_usb)
@@ -1124,8 +1233,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _apply_theme(self, name):
         app = QtWidgets.QApplication.instance()
+        app.setStyle("Fusion")
+        sizing = """
+            QComboBox { min-height:26px; padding:3px 24px 3px 8px; }
+            QComboBox::drop-down { width:22px; }
+            QSpinBox, QDoubleSpinBox { min-height:26px; padding:3px 22px 3px 6px; }
+        """
         if name == "light":
-            app.setStyleSheet("")
+            app.setStyleSheet(sizing)
             pg.setConfigOption("background", "w")
             pg.setConfigOption("foreground", "k")
         else:
@@ -1138,9 +1253,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 QPushButton:hover { background:#374151; }
                 QGroupBox { border:1px solid #374151; border-radius:6px; margin-top:8px; padding-top:8px; }
                 QGroupBox::title { subcontrol-origin: margin; left:8px; padding:0 4px; }
-            """)
+            """ + sizing)
             pg.setConfigOption("background", "#0b1220")
             pg.setConfigOption("foreground", "#d1d5db")
+        for plot in (self.plot, self.viewer_plot):
+            plot.setBackground("w" if name == "light" else "#0b1220")
+            for axis in ("left", "bottom"):
+                plot.getAxis(axis).setTextPen("k" if name == "light" else "#d1d5db")
 
     def _pick_dir(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Kayıt klasörü", self.dir_label.text())
@@ -1181,7 +1300,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.stats_table.setItem(row, col, QtWidgets.QTableWidgetItem("—"))
 
     def start_measure(self):
-        if self.worker:
+        if self.worker or self.connection_worker:
             return
         if self.connection_mode() == "LAN" and not self.address.text().strip():
             QtWidgets.QMessageBox.warning(self, APP_NAME, "Osiloskop IP adresini girin.")
@@ -1207,8 +1326,15 @@ class MainWindow(QtWidgets.QMainWindow):
             "interval_ms": self.interval.value(),
         }
         self.worker = MeasurementWorker(config)
+        if self.idle_client:
+            self.worker.client = self.idle_client
+            self.worker.dialect = Dialect.pick(self.dialect.currentIndex(), self.instrument_id)
+            self.idle_client = None
+        self._connection_controls(False)
+        self.connect_btn.setText("Bağlantıyı kes")
         self.worker.sample.connect(self.on_sample)
         self.worker.status.connect(self.status.showMessage)
+        self.worker.status.connect(self.connection_state.setText)
         self.worker.log.connect(self.append_log)
         self.worker.stopped.connect(self._worker_stopped)
         self.worker.start()
@@ -1231,6 +1357,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _worker_stopped(self):
         self.worker = None
         self.running = False
+        self.connect_btn.setText("Osiloskopa bağlan")
+        self.connection_state.setText("Bağlı değil")
+        self._connection_controls(True)
         self.append_log("Ölçüm durdu")
 
     def on_sample(self, t, values):
@@ -1455,7 +1584,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.usb_selector.setCurrentText(data.get("usb_selector", ""))
             self.dir_label.setText(data.get("record_dir", self.record_dir))
             self.interval.setValue(int(data.get("interval", 250)))
-            self.theme.setCurrentText(data.get("theme", "dark"))
+            self.theme.setCurrentIndex(max(0, self.theme.findData(data.get("theme", "dark"))))
             self._set_serial_side_panel(bool(data.get("serial_side_panel", False)))
         except Exception:
             pass
@@ -1467,7 +1596,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "usb_selector": self.usb_selector.currentText(),
             "record_dir": self.dir_label.text(),
             "interval": self.interval.value(),
-            "theme": self.theme.currentText(),
+            "theme": self.theme.currentData(),
             "serial_side_panel": self.serial_side.isVisible(),
         }
         try:
@@ -1476,6 +1605,13 @@ class MainWindow(QtWidgets.QMainWindow):
             pass
 
     def closeEvent(self, event):
+        if self.connection_worker and self.connection_worker.isRunning():
+            event.ignore()
+            self.status.showMessage("Bağlantı denemesi bitince pencereyi kapatabilirsiniz")
+            return
+        if self.idle_client:
+            self.idle_client.close()
+            self.idle_client = None
         self._save_settings()
         self.end_test()
         for worker in list(self.serial_workers.values()):
