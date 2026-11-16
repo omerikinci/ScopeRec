@@ -23,13 +23,13 @@ Yeni bir marka eklemek için `src\Devices.cs` içindeki `Dialect` sınıfına bi
 
 - **Başlat / Duraklat / Devam et / Testi bitir**: duraklatınca test açık kalır; devam edince grafik, süre ve kayıt dosyaları kaldığı yerden sürer (aradaki boşluk grafikte kesik görünür). **Testi bitir** onay sorar, dosyaları kapatır; sonraki başlatma sıfırdan yeni testtir
 - Kanal (C1–C4) ve ölçüm seçimi: RMS, ortalama (DC), tepe-tepe, frekans, periyot vb.
-- Canlı değer kutuları (min / maks / ortalama) ve canlı grafik (zaman aralığı listeden seçilir ya da elle yazılır: 5 sn – 10 gün, örn. `45 sn`, `7 dk`, `1,5 saat`, `2 gün`; veri pencereden uzunsa alttaki çubukla geçmişte gezilir)
+- Canlı değer kutuları (min / maks / ortalama) ve canlı grafik. Değer kutuları alanı sürüklenerek büyütülür / küçültülür; zaman aralığı listeden seçilir ya da elle yazılır: 5 sn – 10 gün, örn. `45 sn`, `7 dk`, `1,5 saat`, `2 gün`
 - Limit kontrolü: değer alt/üst limitin dışına çıkınca uyarır, olayı saatiyle ve süresiyle kaydeder
 - CSV kaydı (varsayılan `kayitlar` klasörüne; **Kayıt yeri…** ile konum ve klasör adı test başlamadan seçilebilir)
 - **Osiloskop ekranını kaydet**: osiloskobun kendi ekranındaki görüntüyü resim olarak kaydeder (yalnızca Siglent)
 - Türkçe / İngilizce arayüz ve açık / koyu tema (üst çubuktaki listelerden); olay listesinde sorunlar kırmızı, işaretler mavi, düzelmeler yeşil
 - Grafiği temizleme (onay sorar; CSV kayıtlarına dokunmaz) ve tüm ayarları varsayılana döndürme
-- Grafikte fare tekerleğiyle zamanda, Ctrl+tekerlekle değer ekseninde yakınlaştırma; çift tık sıfırlar. Fare altındaki anın değeri imlecin yanında görünür
+- Grafikte fare tekerleğiyle zamanda, Ctrl+tekerlekle değer ekseninde yakınlaştırma; çift tık sıfırlar. **Canlı**, ileri / geri, **Tüm zaman** ve **Y otomatik** düğmeleriyle geçmişte daha akıcı gezilir. Fare altındaki anın değeri imlecin yanında görünür
 - **Test adı**: üst çubukta, Kayıt yeri düğmesinin yanındaki kutuya yazılan ad kayıt dosyalarının başına eklenir (`TEST7 15A_<tarih>.csv`)
 - **İşaret koy**: o ana notuyla işaret bırakır; olay listesine ve log dosyasına yazılır, grafikte dikey çizgi olur, ScopeView'da olay olarak görünür
 - **Test özeti**: test bitince süre, okuma sayısı, limit dışı sayısı ve her değerin min / maks / ortalaması olay listesine ve log dosyasına yazılır

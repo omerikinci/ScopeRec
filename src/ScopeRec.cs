@@ -123,6 +123,8 @@ partial class MainForm : Form
     HScrollBar scroll;
     Label lblHistory;
     bool follow = true; // grafik en yeni veriyi izliyor
+    int cardsHeight = 124;
+    bool sizingCards;
     Label lblHover;
     Point hoverPt;
     bool hovering;
@@ -181,9 +183,10 @@ partial class MainForm : Form
     {
         TableLayoutPanel main = new TableLayoutPanel();
         main.Dock = DockStyle.Fill;
-        main.ColumnCount = 1; main.RowCount = 4;
-        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 124));
+        main.ColumnCount = 1; main.RowCount = 5;
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, cardsHeight));
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 7));
         main.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
         main.Padding = new Padding(4);
@@ -201,6 +204,7 @@ partial class MainForm : Form
 
         FlowLayoutPanel bar = new FlowLayoutPanel();
         bar.Dock = DockStyle.Fill; bar.WrapContents = false; // dar pencerede alt satira kayip gorunmez olmasin
+        bar.AutoScroll = true;
         bar.Controls.Add(MakeLabel(Ui.S("Grafik:", "Chart:"), 6));
         cmbChart = MakeCombo(190);
         foreach (ParamInfo p in ParamInfo.All) cmbChart.Items.Add(p);
@@ -231,11 +235,43 @@ partial class MainForm : Form
         btnImage.Text = Ui.S("Resim kaydet", "Save image"); btnImage.Size = new Size(104, 25); btnImage.Margin = new Padding(6, 2, 0, 0);
         btnImage.Click += delegate { SaveChartImage(); };
         bar.Controls.Add(btnImage);
+        Button btnLive = new Button();
+        btnLive.Text = Ui.S("Canlı", "Live"); btnLive.Size = new Size(62, 25); btnLive.Margin = new Padding(10, 2, 0, 0);
+        btnLive.Click += delegate { FollowLive(); };
+        bar.Controls.Add(btnLive);
+        Button btnBackFast = ChartNavButton("◀◀", delegate { ShiftChart(-1.0); });
+        Button btnBack = ChartNavButton("◀", delegate { ShiftChart(-0.25); });
+        Button btnFwd = ChartNavButton("▶", delegate { ShiftChart(0.25); });
+        Button btnFwdFast = ChartNavButton("▶▶", delegate { ShiftChart(1.0); });
+        bar.Controls.Add(btnBackFast); bar.Controls.Add(btnBack); bar.Controls.Add(btnFwd); bar.Controls.Add(btnFwdFast);
+        Button btnAll = new Button();
+        btnAll.Text = Ui.S("Tüm zaman", "All time"); btnAll.Size = new Size(86, 25); btnAll.Margin = new Padding(6, 2, 0, 0);
+        btnAll.Click += delegate { ShowAllTime(); };
+        bar.Controls.Add(btnAll);
+        Button btnAutoY = new Button();
+        btnAutoY.Text = Ui.S("Y otomatik", "Auto Y"); btnAutoY.Size = new Size(86, 25); btnAutoY.Margin = new Padding(6, 2, 0, 0);
+        btnAutoY.Click += delegate { AutoY(); };
+        bar.Controls.Add(btnAutoY);
         lblHistory = MakeLabel(Ui.S("Geçmiş gösteriliyor – canlı için çubuğu sağa çekin", "Viewing history – drag the bar right for live"), 6);
         lblHistory.Margin = new Padding(16, 6, 0, 0);
         lblHistory.ForeColor = Ui.Th.Bad; lblHistory.Visible = false;
         bar.Controls.Add(lblHistory);
         main.Controls.Add(bar, 0, 1);
+
+        Panel cardSplit = new Panel();
+        cardSplit.Dock = DockStyle.Fill; cardSplit.BackColor = Ui.Th.Border; cardSplit.Cursor = Cursors.HSplit;
+        cardSplit.Paint += delegate(object s, PaintEventArgs e) { DrawSplitterGrip(e.Graphics, cardSplit.ClientRectangle, false); };
+        cardSplit.MouseDown += delegate { sizingCards = true; };
+        cardSplit.MouseUp += delegate { sizingCards = false; cardsHeight = (int)main.RowStyles[0].Height; };
+        cardSplit.MouseLeave += delegate { if ((Control.MouseButtons & MouseButtons.Left) == 0) sizingCards = false; };
+        cardSplit.MouseMove += delegate(object s, MouseEventArgs e)
+        {
+            if (!sizingCards) return;
+            Point p = main.PointToClient(cardSplit.PointToScreen(e.Location));
+            cardsHeight = Math.Max(70, Math.Min(320, p.Y));
+            main.RowStyles[0].Height = cardsHeight;
+        };
+        main.Controls.Add(cardSplit, 0, 2);
 
         chart = new Chart();
         chart.Dock = DockStyle.Fill;
@@ -261,12 +297,12 @@ partial class MainForm : Form
         chart.MouseEnter += delegate { FocusChart(); };
         chart.MouseWheel += delegate(object s, MouseEventArgs e) { ChartWheel(e); };
         chart.MouseDoubleClick += delegate { ResetZoom(); };
-        main.Controls.Add(chart, 0, 2);
+        main.Controls.Add(chart, 0, 3);
 
         scroll = new HScrollBar();
         scroll.Dock = DockStyle.Fill; scroll.Enabled = false;
         scroll.ValueChanged += delegate { follow = scroll.Value >= scroll.Maximum - scroll.LargeChange + 1; };
-        main.Controls.Add(scroll, 0, 3);
+        main.Controls.Add(scroll, 0, 4);
 
         lstLog = new ListBox();
         lstLog.DrawMode = DrawMode.OwnerDrawFixed; lstLog.ItemHeight = 17; lstLog.DrawItem += DrawLogItem; logExtent = 0;
@@ -791,6 +827,7 @@ partial class MainForm : Form
             else if (line == "tema=koyu") Ui.Th = Theme.MakeDark();
             else if (line.StartsWith("test_adi=")) testName = line.Substring(9);
             else if (line.StartsWith("olay_yukseklik=")) { int lh; if (int.TryParse(line.Substring(15), out lh)) logHeight = Math.Max(60, Math.Min(600, lh)); }
+            else if (line.StartsWith("kart_yukseklik=")) { int ch; if (int.TryParse(line.Substring(15), out ch)) cardsHeight = Math.Max(70, Math.Min(320, ch)); }
             else if (line.StartsWith("seri") && line.IndexOf('=') > 0) serIni[line.Substring(0, line.IndexOf('='))] = line.Substring(line.IndexOf('=') + 1);
         }
         SerialLoadSettings(serIni);
@@ -868,6 +905,25 @@ partial class MainForm : Form
         b.Text = text; b.SetBounds(x, 14, 110, 30);
         b.Click += click;
         return b;
+    }
+
+    Button ChartNavButton(string text, EventHandler click)
+    {
+        Button b = new Button();
+        b.Text = text; b.Size = new Size(36, 25); b.Margin = new Padding(3, 2, 0, 0);
+        b.Click += click;
+        return b;
+    }
+
+    static void DrawSplitterGrip(Graphics g, Rectangle r, bool vertical)
+    {
+        using (SolidBrush b = new SolidBrush(Ui.Th.Dark ? Color.FromArgb(200, 204, 210) : Color.FromArgb(90, 94, 100)))
+            for (int i = -2; i <= 2; i++)
+            {
+                int x = vertical ? r.Left + r.Width / 2 - 1 : r.Left + r.Width / 2 - 1 + i * 8;
+                int y = vertical ? r.Top + r.Height / 2 - 1 + i * 8 : r.Top + r.Height / 2 - 1;
+                g.FillRectangle(b, x, y, 3, 3);
+            }
     }
 
     GroupBox MakeGroup(string text, Panel parent, ref int y, int height)
@@ -1602,6 +1658,53 @@ partial class MainForm : Form
         RefreshUi();
     }
 
+    void FollowLive()
+    {
+        follow = true; pendingStart = double.NaN;
+        RefreshUi();
+    }
+
+    void ShiftChart(double fraction)
+    {
+        double w = viewT1 - viewT0;
+        if (w <= 0) w = WindowSeconds();
+        pendingStart = Math.Max(0, viewT0 + w * fraction);
+        follow = false;
+        RefreshUi();
+    }
+
+    void ShowAllTime()
+    {
+        double tFirst = 0, tLast = 0;
+        lock (lk)
+        {
+            bool any = false;
+            foreach (SeriesData s in series)
+                if (s.T.Count > 0)
+                {
+                    if (!any) { tFirst = s.T[0]; tLast = s.T[s.T.Count - 1]; any = true; }
+                    else { tFirst = Math.Min(tFirst, s.T[0]); tLast = Math.Max(tLast, s.T[s.T.Count - 1]); }
+                }
+            foreach (SeriesData s in serSeries.Values)
+                if (s.T.Count > 0)
+                {
+                    if (!any) { tFirst = s.T[0]; tLast = s.T[s.T.Count - 1]; any = true; }
+                    else { tFirst = Math.Min(tFirst, s.T[0]); tLast = Math.Max(tLast, s.T[s.T.Count - 1]); }
+                }
+            if (!any) return;
+        }
+        zoomWin = Math.Max(MinWindow, Math.Min(MaxWindow, tLast - tFirst));
+        pendingStart = tFirst;
+        follow = false;
+        RefreshUi();
+    }
+
+    void AutoY()
+    {
+        yLo = yHi = double.NaN;
+        RefreshUi();
+    }
+
     // Yazi kutusunda yazarken fare grafigin ustunden gecerse odagi calma
     void FocusChart()
     {
@@ -1703,6 +1806,7 @@ partial class MainForm : Form
                 "adres=" + txtAddr.Text.Trim(),
                 "komut_seti=" + cmbDialect.SelectedIndex,
                 "olay_yukseklik=" + logHeight,
+                "kart_yukseklik=" + cardsHeight,
                 "test_adi=" + testName,
                 "kayit_yeri=" + recBase,
                 "kayit_klasoru=" + recName,
