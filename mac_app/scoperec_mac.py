@@ -250,6 +250,9 @@ class ScpiClient:
 
 
 class UsbTmcClient:
+    READ_PACKET = 65536
+    READ_PAYLOAD = READ_PACKET - 12
+
     def __init__(self, selector="", timeout=3.0):
         if usb is None:
             raise ScpiError("PyUSB/libusb yüklü değil")
@@ -266,6 +269,7 @@ class UsbTmcClient:
         self.intf = None
         self.ep_in = None
         self.ep_out = None
+        self.in_packet_size = 64
         for intf in self.cfg:
             if intf.bInterfaceClass == 0xFE and intf.bInterfaceSubClass == 3:
                 self.intf = intf
@@ -283,6 +287,7 @@ class UsbTmcClient:
                 continue
             if usb.util.endpoint_direction(ep.bEndpointAddress) == usb.util.ENDPOINT_IN:
                 self.ep_in = ep
+                self.in_packet_size = max(64, int(getattr(ep, "wMaxPacketSize", 64)))
             else:
                 self.ep_out = ep
         if self.ep_in is None or self.ep_out is None:
@@ -374,11 +379,11 @@ class UsbTmcClient:
             req[0] = 2
             req[1] = tag
             req[2] = (~tag) & 0xFF
-            req[4:8] = (1024 * 1024).to_bytes(4, "little")
+            req[4:8] = self.READ_PAYLOAD.to_bytes(4, "little")
             self.ep_out.write(req, self.timeout_ms)
             stale = 0
             while True:
-                raw = bytes(self.ep_in.read(1024 * 1024, self.timeout_ms))
+                raw = bytes(self.ep_in.read(self.READ_PACKET, self.timeout_ms))
                 if len(raw) < 12 or raw[0] != 2:
                     raise ScpiError("USBTMC senkron hatası")
                 size = int.from_bytes(raw[4:8], "little")
@@ -387,7 +392,8 @@ class UsbTmcClient:
                 if raw[1] == tag:
                     out.extend(raw[12:12 + got])
                     while got < size:
-                        chunk = bytes(self.ep_in.read(min(1024 * 1024, size - got), self.timeout_ms))
+                        read_len = min(self.READ_PACKET, max(self.in_packet_size, size - got))
+                        chunk = bytes(self.ep_in.read(read_len, self.timeout_ms))
                         take = min(len(chunk), size - got)
                         out.extend(chunk[:take])
                         got += take
@@ -408,7 +414,7 @@ class UsbTmcClient:
     def clear(self):
         for _ in range(16):
             try:
-                self.ep_in.read(1024 * 1024, 50)
+                self.ep_in.read(self.READ_PACKET, 50)
             except Exception:
                 break
 
