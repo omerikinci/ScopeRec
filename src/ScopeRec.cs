@@ -421,7 +421,7 @@ partial class MainForm : Form
         // kayit grubu: kaydet kutusu, test adi (dosya adinin basina gelir) ve kayit yeri yan yana
         chkRecord.SetBounds(262, 19, 146, 22);
         chkRecord.CheckedChanged += delegate { wantRecord = chkRecord.Checked; };
-        Label lName = new Label(); lName.Text = Ui.S("Test adı:", "Test name:"); lName.SetBounds(410, 21, 62, 18);
+        Label lName = new Label(); lName.Text = Ui.S("Test adı:", "Test name:"); lName.AutoSize = true;
         txtTestName = new TextBox(); txtTestName.Text = testName; txtTestName.SetBounds(474, 17, 140, 24);
         txtTestName.TextChanged += delegate { testName = txtTestName.Text.Trim(); };
         btnFolder = MakeButton(Ui.S("Kayıt yeri…", "Record to…"), 620, delegate { RecordSettings(); });

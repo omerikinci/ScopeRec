@@ -44,8 +44,9 @@ class WindowsUiTests
         Ui.Th = dark ? Theme.MakeDark() : Theme.Light();
         using (TestForm f = new TestForm())
         {
-            f.ClientSize = new Size(width, 760);
+            f.ClientSize = new Size(width, Math.Min(760, Screen.PrimaryScreen.WorkingArea.Height - 80));
             f.Show(); Pump();
+            Check(f.ClientSize.Width == width, "Windows constrained the requested test width");
             Panel top = (Panel)Field(f, "topBar");
             foreach (Control a in top.Controls)
             {
@@ -139,7 +140,7 @@ class WindowsUiTests
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             foreach (bool dark in new bool[] { false, true })
-                foreach (int width in new int[] { 900, 1280, 1560 }) LayoutTest(width, dark);
+                foreach (int width in new int[] { 900, Math.Max(900, Screen.PrimaryScreen.WorkingArea.Width - 40) }) LayoutTest(width, dark);
             MeasurementTest();
             Console.WriteLine("WINDOWS TESTS PASSED");
             return 0;
