@@ -1,0 +1,53 @@
+name: Windows Build And Test
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'build.bat'
+      - '.github/workflows/windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build Windows applications
+        shell: cmd
+        run: build.bat --no-pause
+      - name: Build UI and LAN regression tests
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force test-output | Out-Null
+          $compiler = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          & $compiler -nologo -o+ -codepage:65001 -target:exe -main:WindowsUiTests -r:System.Windows.Forms.DataVisualization.dll -r:System.Management.dll -out:test-output/WindowsUiTests.exe src/Common.cs src/UsbTmc.cs src/Devices.cs src/Serial.cs src/ScopeRec.cs src/ScopeRec.Serial.cs tests/WindowsUiTests.cs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test startup, layouts and measurement on Windows
+        shell: pwsh
+        run: |
+          & ./test-output/WindowsUiTests.exe 2>&1 | Tee-Object -FilePath test-output/windows-tests.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload test screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Windows-Test-Results
+          path: |
+            test-output/*.png
+            test-output/*.log
+      - name: Prepare Windows package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force windows-package | Out-Null
+          Copy-Item ScopeRec.exe, ScopeView.exe, ScopeCli.exe, ScopeCli-terminal.bat, ScopeCli-olcum.bat, README.md -Destination windows-package
+      - name: Upload ready-to-run applications
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ScopeRec-Windows
+          path: windows-package/

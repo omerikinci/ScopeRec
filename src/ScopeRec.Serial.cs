@@ -112,10 +112,7 @@ partial class MainForm
         btnSerToggle = new Button();
         btnSerToggle.Text = Ui.S("Seri yan panel", "Serial panel");
         btnSerToggle.Size = new Size(112, 30);
-        btnSerToggle.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        EventHandler placeToggle = delegate { btnSerToggle.Left = Math.Max(10, topBar.ClientSize.Width - lblDevice.Width - btnSerToggle.Width - 12); };
-        placeToggle(null, null);
-        topBar.Resize += placeToggle;
+        btnSerToggle.Margin = new Padding(4, 8, 4, 4);
         btnSerToggle.Click += delegate
         {
             serPanelOn = !serPanelOn;

@@ -185,7 +185,7 @@ partial class MainForm : Form
         main.Dock = DockStyle.Fill;
         main.ColumnCount = 1; main.RowCount = 5;
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, cardsHeight));
-        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 32 + SystemInformation.HorizontalScrollBarHeight));
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 7));
         main.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
@@ -259,16 +259,23 @@ partial class MainForm : Form
         main.Controls.Add(bar, 0, 1);
 
         Panel cardSplit = new Panel();
+        int splitStartY = 0, splitStartHeight = 0;
         cardSplit.Dock = DockStyle.Fill; cardSplit.BackColor = Ui.Th.Border; cardSplit.Cursor = Cursors.HSplit;
+        cardSplit.Margin = Padding.Empty;
         cardSplit.Paint += delegate(object s, PaintEventArgs e) { DrawSplitterGrip(e.Graphics, cardSplit.ClientRectangle, false); };
-        cardSplit.MouseDown += delegate { sizingCards = true; };
-        cardSplit.MouseUp += delegate { sizingCards = false; cardsHeight = (int)main.RowStyles[0].Height; };
-        cardSplit.MouseLeave += delegate { if ((Control.MouseButtons & MouseButtons.Left) == 0) sizingCards = false; };
+        cardSplit.MouseDown += delegate(object s, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left) return;
+            splitStartY = Cursor.Position.Y; splitStartHeight = cardsHeight;
+            sizingCards = true; cardSplit.Capture = true;
+        };
+        cardSplit.MouseUp += delegate { sizingCards = false; cardSplit.Capture = false; };
+        cardSplit.MouseCaptureChanged += delegate { if (!cardSplit.Capture) sizingCards = false; };
         cardSplit.MouseMove += delegate(object s, MouseEventArgs e)
         {
             if (!sizingCards) return;
-            Point p = main.PointToClient(cardSplit.PointToScreen(e.Location));
-            cardsHeight = Math.Max(70, Math.Min(320, p.Y));
+            int maxHeight = Math.Max(70, Math.Min(320, main.ClientSize.Height - 180));
+            cardsHeight = Math.Max(70, Math.Min(maxHeight, splitStartHeight + Cursor.Position.Y - splitStartY));
             main.RowStyles[0].Height = cardsHeight;
         };
         main.Controls.Add(cardSplit, 0, 2);
@@ -397,8 +404,9 @@ partial class MainForm : Form
 
 
         // ust cubuk
-        Panel top = new Panel();
-        top.Dock = DockStyle.Top; top.Height = 58; top.BackColor = Ui.Th.Bar;
+        FlowLayoutPanel top = new FlowLayoutPanel();
+        top.Dock = DockStyle.Top; top.AutoSize = true; top.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        top.WrapContents = true; top.Padding = new Padding(6, 4, 6, 4); top.BackColor = Ui.Th.Bar;
         btnStart = new Button();
         btnStart.SetBounds(10, 9, 130, 40);
         btnStart.Font = new Font("Segoe UI", 11f, FontStyle.Bold);
@@ -433,7 +441,7 @@ partial class MainForm : Form
                                      "Closes the test and finalises the record files. The next Start is a new test from zero."));
         tips.SetToolTip(chkRecord, Ui.S("İşaretliyken ölçümler CSV dosyasına, olaylar log dosyasına yazılır", "When checked, measurements go to a CSV file and events to a log file"));
         lblDevice = new Label();
-        lblDevice.Dock = DockStyle.Right; lblDevice.Width = 250;
+        lblDevice.Size = new Size(250, 30); lblDevice.AutoEllipsis = true;
         lblDevice.Padding = new Padding(0, 0, 10, 0);
         lblDevice.TextAlign = ContentAlignment.MiddleRight;
         // dil ve tema: degisince arayuz bastan kurulur (olcum surerken kilitli)
@@ -446,7 +454,7 @@ partial class MainForm : Form
         cmbTheme.SetBounds(1118, 17, 74, 24);
         cmbTheme.SelectedIndexChanged += delegate { Ui.Th = cmbTheme.SelectedIndex == 1 ? Theme.MakeDark() : Theme.Light(); BeginInvoke(new MethodInvoker(Rebuild)); };
         top.Controls.AddRange(new Control[] { btnStart, btnEnd, chkRecord, lName, txtTestName, btnFolder, btnShot, btnReset, cmbLang, cmbTheme, lblDevice });
-        top.Controls.AddRange(new Control[] { TopSeparator(256), TopSeparator(723), TopSeparator(1028), TopSeparator(1196) });
+        foreach (Control c in top.Controls) c.Margin = new Padding(4, 8, 4, 4);
         Cue(txtTestName, Ui.S("örn. TEST7 15A", "e.g. TEST7 15A"));
         topBar = top;
 
@@ -844,14 +852,6 @@ partial class MainForm : Form
         EventHandler set = delegate { try { SendMessage(box.Handle, 0x1501, (IntPtr)1, hint); } catch (Exception) { } }; // EM_SETCUEBANNER
         if (box.IsHandleCreated) set(null, null);
         box.HandleCreated += set;
-    }
-
-    // Ust cubukta dugme gruplarini ayiran ince dikey cizgi
-    Panel TopSeparator(int x)
-    {
-        Panel p = new Panel();
-        p.SetBounds(x, 13, 1, 32); p.BackColor = Ui.Th.Border;
-        return p;
     }
 
     Label lblCardsHint;
