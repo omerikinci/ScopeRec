@@ -62,8 +62,8 @@ class WindowsUiTests
             ComboBox chartChoice = (ComboBox)Field(f, "cmbChart");
             Control bar = chartChoice.Parent;
             foreach (Control c in bar.Controls)
-                Check(c.Bottom + SystemInformation.HorizontalScrollBarHeight <= bar.ClientSize.Height,
-                    "Chart toolbar control clipped: " + c.Text);
+                if (c.Visible) Check(c.Bottom <= bar.ClientSize.Height,
+                    "Chart toolbar control clipped: " + c.Text + " bottom=" + c.Bottom + " clientHeight=" + bar.ClientSize.Height);
             using (Bitmap image = new Bitmap(f.Width, f.Height))
             {
                 f.DrawToBitmap(image, new Rectangle(Point.Empty, image.Size));

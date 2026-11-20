@@ -173,6 +173,7 @@ partial class MainForm : Form
         uiTimer.Tick += delegate { RefreshUi(); };
         uiTimer.Start();
         FormClosing += delegate(object s, FormClosingEventArgs e) { OnClosingForm(e); };
+        FormClosed += delegate { uiTimer.Stop(); uiTimer.Dispose(); if (tips != null) tips.Dispose(); };
         Shown += delegate { Config c = ReadConn(); ThreadPool.QueueUserWorkItem(delegate { if (!running) WithDevice(c, null); }); };
         Shown += delegate { SerialAutoConnect(); }; // gecen sefer acik olan seri baglantilari yeniden ac
     }
@@ -204,6 +205,7 @@ partial class MainForm : Form
 
         FlowLayoutPanel bar = new FlowLayoutPanel();
         bar.Dock = DockStyle.Fill; bar.WrapContents = false; // dar pencerede alt satira kayip gorunmez olmasin
+        bar.Margin = Padding.Empty;
         bar.AutoScroll = true;
         bar.Controls.Add(MakeLabel(Ui.S("Grafik:", "Chart:"), 6));
         cmbChart = MakeCombo(190);
