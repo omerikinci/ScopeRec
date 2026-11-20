@@ -19,6 +19,10 @@ Yeni bir marka eklemek için `src\Devices.cs` içindeki `Dialect` sınıfına bi
 
 ## Kullanım
 
+Windows için hazır programlar [Windows Build And Test](https://github.com/omerikinci/ScopeRec/actions/workflows/windows.yml) sayfasındaki başarılı çalışmanın **ScopeRec-Windows** paketindedir. Paketin tamamını bir klasöre çıkartıp `ScopeRec.exe` dosyasını açın. GitHub'ın **Code / Download ZIP** seçeneği kaynak kodu indirir; bu arşivde ana uygulamanın `.exe` dosyası bulunmaz.
+
+Kaynak koddan derlemek için Windows'ta `build.bat` dosyasını çalıştırın. Derleme hata verirse pencere hata metnini gösterir; üç program da başarıyla derlenmeden tamamlandı mesajı verilmez.
+
 `ScopeRec.exe` dosyasını çalıştırın, soldan kanal ve parametreleri seçip **Başlat**'a basın.
 
 - **Başlat / Duraklat / Devam et / Testi bitir**: duraklatınca test açık kalır; devam edince grafik, süre ve kayıt dosyaları kaldığı yerden sürer (aradaki boşluk grafikte kesik görünür). **Testi bitir** onay sorar, dosyaları kapatır; sonraki başlatma sıfırdan yeni testtir

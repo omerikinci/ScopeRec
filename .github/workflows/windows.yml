@@ -26,7 +26,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force test-output | Out-Null
           $compiler = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-          & $compiler -nologo -o+ -codepage:65001 -target:exe -main:WindowsUiTests -r:System.Windows.Forms.DataVisualization.dll -r:System.Management.dll -out:test-output/WindowsUiTests.exe src/Common.cs src/UsbTmc.cs src/Devices.cs src/Serial.cs src/ScopeRec.cs src/ScopeRec.Serial.cs tests/WindowsUiTests.cs
+          & $compiler -nologo -o+ -codepage:65001 -target:exe -main:WindowsUiTests -r:System.Windows.Forms.DataVisualization.dll -r:System.Management.dll -out:test-output\WindowsUiTests.exe src\Common.cs src\UsbTmc.cs src\Devices.cs src\Serial.cs src\ScopeRec.cs src\ScopeRec.Serial.cs tests\WindowsUiTests.cs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test startup, layouts and measurement on Windows
         shell: pwsh
