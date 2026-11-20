@@ -266,7 +266,7 @@ partial class MainForm : Form
         cardSplit.MouseDown += delegate(object s, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left) return;
-            splitStartY = Cursor.Position.Y; splitStartHeight = cardsHeight;
+            splitStartY = System.Windows.Forms.Cursor.Position.Y; splitStartHeight = cardsHeight;
             sizingCards = true; cardSplit.Capture = true;
         };
         cardSplit.MouseUp += delegate { sizingCards = false; cardSplit.Capture = false; };
@@ -275,7 +275,7 @@ partial class MainForm : Form
         {
             if (!sizingCards) return;
             int maxHeight = Math.Max(70, Math.Min(320, main.ClientSize.Height - 180));
-            cardsHeight = Math.Max(70, Math.Min(maxHeight, splitStartHeight + Cursor.Position.Y - splitStartY));
+            cardsHeight = Math.Max(70, Math.Min(maxHeight, splitStartHeight + System.Windows.Forms.Cursor.Position.Y - splitStartY));
             main.RowStyles[0].Height = cardsHeight;
         };
         main.Controls.Add(cardSplit, 0, 2);

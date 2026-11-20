@@ -39,6 +39,8 @@ class WindowsUiTests
 
     static void LayoutTest(int width, bool dark)
     {
+        File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ayarlar.ini"),
+            "tema=" + (dark ? "koyu" : "acik") + "\nseri_panel=1\n");
         Ui.Th = dark ? Theme.MakeDark() : Theme.Light();
         using (TestForm f = new TestForm())
         {
