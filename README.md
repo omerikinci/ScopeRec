@@ -125,7 +125,7 @@ macOS için sıfırdan yazılmış yerel uygulama `mac_app` klasöründedir. Esk
 
 ```
 ./mac_app/build-mac-app.sh
-open dist/ScopeRecMac.app
+open dist/ScopeRec.app
 ```
 
 Bu sürüm LAN/SCPI üzerinden ölçüm yapar; ayrıca USB Test & Measurement sınıfındaki cihazlar için libusb/PyUSB tabanlı USB kablo bağlantısını dener. macOS'ta USB erişimi cihaza ve izinlere bağlı olduğundan en sorunsuz yol çoğu durumda LAN/SCPI bağlantısıdır.

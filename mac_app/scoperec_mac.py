@@ -62,7 +62,7 @@ def usb_backend():
     return USB_BACKEND
 
 
-APP_NAME = "ScopeRec Mac"
+APP_NAME = "ScopeRec"
 PARAMS = [
     ("RMS", "RMS", "V"),
     ("MEAN", "Ortalama", "V"),
@@ -1677,6 +1677,8 @@ def main():
 
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+    asset_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    app.setWindowIcon(QtGui.QIcon(str(asset_root / "logo" / "scoperec-kare.png")))
     pg.setConfigOptions(antialias=True)
     win = MainWindow()
     win.show()

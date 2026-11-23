@@ -14,7 +14,7 @@ Bu klasör macOS için sıfırdan yazılmış ScopeRec uygulamasını içerir. W
 
 ```bash
 ./mac_app/build-mac-app.sh
-open dist/ScopeRecMac.app
+open dist/ScopeRec.app
 ```
 
 ## Desteklenen ana özellikler
