@@ -76,6 +76,9 @@ class WindowsUiTests
             Check(window.Parent.ClientRectangle.Contains(window.Bounds), "Time span is clipped");
             Control[] clear = f.Controls.Find("clearChartButton", true);
             Check(clear.Length == 1 && clear[0].Parent.ClientRectangle.Contains(clear[0].Bounds), "Clear chart is clipped");
+            Rectangle clearScreen = clear[0].RectangleToScreen(clear[0].ClientRectangle);
+            for (Control ancestor = clear[0].Parent; ancestor != null; ancestor = ancestor.Parent)
+                Check(ancestor.RectangleToScreen(ancestor.ClientRectangle).Contains(clearScreen), "Clear chart extends outside " + ancestor.GetType().Name);
             SerialClearTest(f);
             ComboBox chartChoice = (ComboBox)Field(f, "cmbChart");
             Control bar = chartChoice.Parent;

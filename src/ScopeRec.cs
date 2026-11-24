@@ -191,6 +191,7 @@ partial class MainForm : Form
         TableLayoutPanel main = new TableLayoutPanel();
         main.Dock = DockStyle.Fill;
         main.ColumnCount = 1; main.RowCount = 5;
+        main.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, cardsHeight));
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 32 + SystemInformation.HorizontalScrollBarHeight));
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 7));
