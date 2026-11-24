@@ -48,6 +48,8 @@ class ConnectionTests(unittest.TestCase):
         if self.window.worker:
             self.wait_for(lambda: self.window.worker is None)
         self.window.close()
+        self.window.deleteLater()
+        self.app.sendPostedEvents(None, scope.QtCore.QEvent.DeferredDelete)
         self.app.processEvents()
         self.directory.cleanup()
 
@@ -95,6 +97,56 @@ class ConnectionTests(unittest.TestCase):
         self.assertTrue(self.window.curves[key].isVisible())
         self.window._prepare_series()
         self.assertEqual(self.window.plot_legend.count(), len(self.window.curves))
+
+    def test_clear_graph_while_recording_keeps_recording_and_series_identity(self):
+        self.window.clear_plot()
+        self.window.dir_label.setText(self.directory.name)
+        self.window.record_check.setChecked(True)
+        with patch.object(scope, "open_instrument", side_effect=lambda _: Instrument()):
+            self.window.start_measure()
+            self.wait_for(lambda: self.window.sample_count >= 3)
+            recorder = self.window.recorder
+            count = self.window.sample_count
+            legends = self.window.plot_legend.count()
+            self.window.clear_plot_btn.click()
+            self.assertTrue(self.window.running)
+            self.assertIs(self.window.recorder, recorder)
+            self.assertEqual(self.window.sample_count, count)
+            self.assertTrue(all(not series.times for series in self.window.series.values()))
+            self.assertEqual(self.window.plot_legend.count(), legends)
+            self.wait_for(lambda: self.window.sample_count > count)
+            self.window.end_test()
+            self.wait_for(lambda: self.window.worker is None)
+            with open(recorder.stem + ".csv", encoding="utf-8-sig") as file:
+                self.assertGreaterEqual(len(file.readlines()), count + 2)
+        self.window.clear_plot()
+
+    def test_clear_terminal_is_independent_and_keeps_serial_graph(self):
+        self.window.on_serial_line("Seri 1", "T:12")
+        self.window.on_serial_line("Seri 2", "T:13")
+        self.window.on_serial_values("Seri 1", {"T": 12.0})
+        self.window.serial_logs["Seri 1"]["clear"].click()
+        self.assertEqual(self.window.serial_logs["Seri 1"]["text"].toPlainText(), "")
+        self.assertIn("T:13", self.window.serial_logs["Seri 2"]["text"].toPlainText())
+        self.assertEqual(self.window.series["Seri 1_T"].last, 12.0)
+
+    def test_side_panel_has_wide_handle_and_can_resize(self):
+        self.window.resize(1440, 1000)
+        self.window._set_serial_side_panel(True)
+        self.app.processEvents()
+        splitter = self.window.work_split
+        before = splitter.sizes()
+        self.assertGreaterEqual(splitter.handle(1).width(), 14)
+        splitter.moveSplitter(before[0] - 90, 1)
+        self.app.processEvents()
+        after = splitter.sizes()
+        self.assertNotEqual(before, after)
+        self.assertGreater(after[1], before[1])
+        self.assertGreaterEqual(self.window.serial_side.width(), 320)
+        self.window._set_serial_side_panel(False)
+        self.window._set_serial_side_panel(True)
+        self.app.processEvents()
+        self.assertGreater(splitter.handle(1).width(), 4)
 
     def test_pause_resume_retains_recording_and_measurements(self):
         self.window.dir_label.setText(self.directory.name)

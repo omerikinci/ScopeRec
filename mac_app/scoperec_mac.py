@@ -845,6 +845,33 @@ def parse_serial_values(text):
     return result
 
 
+class GripHandle(QtWidgets.QSplitterHandle):
+    def __init__(self, orientation, parent):
+        super().__init__(orientation, parent)
+        self.setCursor(QtCore.Qt.SplitHCursor if orientation == QtCore.Qt.Horizontal else QtCore.Qt.SplitVCursor)
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        dark = self.splitter().property("darkTheme")
+        painter.fillRect(self.rect(), QtGui.QColor("#293540" if dark else "#cbd2d6"))
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(QtGui.QColor("#a1adb8" if dark else "#5d6973"))
+        for offset in (-8, 0, 8):
+            x = self.width() // 2 + (0 if self.orientation() == QtCore.Qt.Horizontal else offset)
+            y = self.height() // 2 + (offset if self.orientation() == QtCore.Qt.Horizontal else 0)
+            painter.drawEllipse(QtCore.QPoint(x, y), 2, 2)
+
+
+class GripSplitter(QtWidgets.QSplitter):
+    def __init__(self, orientation=QtCore.Qt.Horizontal):
+        super().__init__(orientation)
+        self.setHandleWidth(14)
+        self.setChildrenCollapsible(False)
+
+    def createHandle(self):
+        return GripHandle(self.orientation(), self)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
@@ -954,9 +981,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.connection_state.setWordWrap(True)
         options.addWidget(self.connection_state, 1)
 
-        split = QtWidgets.QSplitter()
+        split = GripSplitter()
         root.addWidget(split, 1)
         left = QtWidgets.QWidget()
+        left.setMinimumWidth(260)
+        left.setMaximumWidth(440)
         split.addWidget(left)
         left_layout = QtWidgets.QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 8, 0)
@@ -1032,16 +1061,18 @@ class MainWindow(QtWidgets.QMainWindow):
             btn.setMinimumHeight(34)
             buttons.addWidget(btn, i // 2, i % 2)
 
-        work_split = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        work_split = GripSplitter()
+        self.work_split = work_split
         split.addWidget(work_split)
         right_tabs = QtWidgets.QTabWidget()
         self.right_tabs = right_tabs
+        right_tabs.setMinimumWidth(350)
         work_split.addWidget(right_tabs)
         split.setSizes([360, 1080])
 
         live = QtWidgets.QWidget()
         live_lay = QtWidgets.QVBoxLayout(live)
-        live_split = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        live_split = GripSplitter(QtCore.Qt.Vertical)
         live_lay.addWidget(live_split, 1)
         self.stats_table = QtWidgets.QTableWidget(0, 5)
         self.stats_table.setHorizontalHeaderLabels(["Seri", "Son", "Min", "Maks", "Ortalama"])
@@ -1076,12 +1107,35 @@ class MainWindow(QtWidgets.QMainWindow):
         self.auto_y_btn = QtWidgets.QPushButton("Y otomatik")
         self.auto_y_btn.clicked.connect(lambda: self.plot.enableAutoRange(axis="y", enable=True))
         nav.addWidget(self.follow_check)
-        nav.addWidget(QtWidgets.QLabel("Pencere"))
-        nav.addWidget(self.window_spin)
-        nav.addWidget(self.fit_x_btn)
-        nav.addWidget(self.auto_y_btn)
+        self.time_window_control = QtWidgets.QFrame()
+        self.time_window_control.setObjectName("timeWindowControl")
+        time_row = QtWidgets.QHBoxLayout(self.time_window_control)
+        time_row.setContentsMargins(8, 4, 8, 4)
+        time_row.addWidget(QtWidgets.QLabel("Zaman aralığı"))
+        self.window_spin.setFixedWidth(128)
+        time_row.addWidget(self.window_spin)
+        nav.addWidget(self.time_window_control)
+        self.clear_plot_btn = QtWidgets.QPushButton("Grafiği temizle")
+        self.clear_plot_btn.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_TrashIcon))
+        self.clear_plot_btn.setToolTip("Yalnızca grafiği temizler; ölçüm ve dosya kaydı devam eder")
+        self.clear_plot_btn.clicked.connect(self.clear_plot)
         nav.addStretch(1)
-        plot_lay.addLayout(nav)
+        nav_widget = QtWidgets.QWidget()
+        nav_widget.setLayout(nav)
+        nav.setSizeConstraint(QtWidgets.QLayout.SetMinimumSize)
+        nav_scroll = QtWidgets.QScrollArea()
+        nav_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        nav_scroll.setWidgetResizable(True)
+        nav_scroll.setFixedHeight(64)
+        nav_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        nav_scroll.setWidget(nav_widget)
+        plot_lay.addWidget(nav_scroll)
+        plot_actions = QtWidgets.QHBoxLayout()
+        plot_actions.addWidget(self.fit_x_btn)
+        plot_actions.addWidget(self.auto_y_btn)
+        plot_actions.addWidget(self.clear_plot_btn)
+        plot_actions.addStretch(1)
+        plot_lay.addLayout(plot_actions)
         self.plot_legend = self._create_legend(self.curves)
         plot_lay.addWidget(self.plot_legend)
         self.plot = pg.PlotWidget()
@@ -1123,7 +1177,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.serial_side = QtWidgets.QFrame()
         self.serial_side.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.serial_side.setMinimumWidth(360)
+        self.serial_side.setMinimumWidth(320)
         side_lay = QtWidgets.QVBoxLayout(self.serial_side)
         side_head = QtWidgets.QHBoxLayout()
         side_title = QtWidgets.QLabel("Seri port")
@@ -1221,20 +1275,35 @@ class MainWindow(QtWidgets.QMainWindow):
         baud.setEditable(True)
         baud.addItems(["9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"])
         baud.setCurrentText("115200")
+        baud.setFixedWidth(110)
+        port.setMinimumWidth(80)
+        port.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Fixed)
         connect = QtWidgets.QPushButton("Bağlan")
         refresh = QtWidgets.QPushButton("Yenile")
-        plot_values = QtWidgets.QCheckBox("Değerleri grafiğe ekle")
+        plot_values = QtWidgets.QCheckBox("Grafikte göster")
         plot_values.setChecked(True)
         row.addWidget(QtWidgets.QLabel("Port"))
         row.addWidget(port, 2)
         row.addWidget(QtWidgets.QLabel("Baud"))
         row.addWidget(baud)
-        row.addWidget(refresh)
-        row.addWidget(connect)
-        row.addWidget(plot_values)
         lay.addLayout(row)
+        actions = QtWidgets.QHBoxLayout()
+        actions.addWidget(refresh)
+        actions.addWidget(connect)
+        actions.addWidget(plot_values)
+        actions.addStretch(1)
+        lay.addLayout(actions)
+        terminal_header = QtWidgets.QHBoxLayout()
+        terminal_header.addWidget(QtWidgets.QLabel("Terminal"))
+        terminal_header.addStretch(1)
+        clear = QtWidgets.QPushButton("Temizle")
+        clear.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_TrashIcon))
+        clear.setToolTip("Terminal ekranını temizler; bağlantıyı ve kayıt dosyasını etkilemez")
+        terminal_header.addWidget(clear)
+        lay.addLayout(terminal_header)
         text = QtWidgets.QTextEdit()
         text.setReadOnly(True)
+        text.document().setMaximumBlockCount(5000)
         lay.addWidget(text, 1)
         send_row = QtWidgets.QHBoxLayout()
         send = QtWidgets.QLineEdit()
@@ -1243,7 +1312,8 @@ class MainWindow(QtWidgets.QMainWindow):
         send_row.addWidget(send_btn)
         lay.addLayout(send_row)
         name = f"Seri {idx + 1}"
-        state = {"port": port, "baud": baud, "text": text, "send": send, "connect": connect, "plot": plot_values}
+        state = {"port": port, "baud": baud, "text": text, "send": send, "connect": connect, "plot": plot_values, "clear": clear}
+        clear.clicked.connect(lambda _=None, n=name: self.clear_serial_terminal(n))
         refresh.clicked.connect(lambda _=None, p=port: self._fill_ports(p))
         connect.clicked.connect(lambda _=None, n=name, st=state: self.toggle_serial(n, st))
         send_btn.clicked.connect(lambda _=None, n=name, st=state: self.send_serial(n, st))
@@ -1370,6 +1440,18 @@ class MainWindow(QtWidgets.QMainWindow):
             for axis in ("left", "bottom"):
                 plot.getAxis(axis).setTextPen("k" if name == "light" else "#d1d5db")
         self._style_action_buttons(name)
+        self.connect_btn.setMinimumWidth(max(150, self.connect_btn.sizeHint().width()))
+        for splitter in self.findChildren(GripSplitter):
+            splitter.setProperty("darkTheme", name == "dark")
+            for index in range(1, splitter.count()):
+                splitter.handle(index).update()
+        time_background = "#263e49" if name == "dark" else "#dce7e8"
+        time_text = "#e5e7eb" if name == "dark" else "#24303a"
+        self.time_window_control.setStyleSheet(f"""
+            QFrame#timeWindowControl {{ background:{time_background}; border:1px solid #536773; border-radius:5px; }}
+            QFrame#timeWindowControl QLabel {{ background:transparent; color:{time_text}; font-weight:600; }}
+            QFrame#timeWindowControl QDoubleSpinBox {{ background:#344b5b; color:#eef1f4; border:1px solid #657784; }}
+        """)
 
     def _style_action_buttons(self, theme):
         disabled_bg, disabled_text = (("#263244", "#94a3b8") if theme == "dark"
@@ -1584,6 +1666,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.recorder.event(t, "normale dondu", value, f"{t - self.out_since:.2f}")
 
     def _refresh_stats(self):
+        if self._closing:
+            return
         if self.plot_interacting:
             return
         if self.dirty_plot:
@@ -1608,6 +1692,26 @@ class MainWindow(QtWidgets.QMainWindow):
             window = self.window_spin.value()
             self.plot.setXRange(max(0, self.current_t - window), max(window, self.current_t), padding=0)
         self.dirty_plot = False
+
+    def clear_plot(self):
+        for series in self.series.values():
+            series.times.clear()
+            series.values.clear()
+            series.revision += 1
+        for curve in self.curves.values():
+            curve.setData([], [])
+        for mark in self.mark_lines:
+            self.plot.removeItem(mark)
+        self.mark_lines.clear()
+        self.plot_revisions.clear()
+        self.dirty_plot = True
+        self.follow_check.setChecked(True)
+        self._refresh_stats()
+
+    def clear_serial_terminal(self, name):
+        state = self.serial_logs.get(name)
+        if state:
+            state["text"].clear()
 
     def _set_follow(self, enabled):
         self.follow_plot = enabled
@@ -1830,6 +1934,8 @@ class MainWindow(QtWidgets.QMainWindow):
             event.ignore()
             QtCore.QTimer.singleShot(100, self.close)
             return
+        self.ui_timer.stop()
+        self.interaction_timer.stop()
         event.accept()
 
 

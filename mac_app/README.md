@@ -25,6 +25,8 @@ open dist/ScopeRec.app
 - C1-C4 kanal seçimi, RMS/MEAN/PKPK/FREQ/PER ve diğer ölçüm parametreleri
 - Canlı grafik, canlı son/min/maks/ortalama tablosu
 - Grafik üzerinde kanal/ölçüm adıyla renkli lejant; kutucuklarla çizgileri ayrı ayrı gösterme/gizleme ve tabloda eşleşen renkler
+- Canlı ölçümü veya dosya kaydını durdurmadan grafiği temizleme; her seri terminal için bağımsız ekran temizleme
+- Geniş tutma alanı olan panel ayırıcıları ve renkli zaman aralığı alanı
 - Duraklat/devam et sırasında aynı grafik, zaman ekseni ve kayıt dosyasını koruma
 - CSV ölçüm kaydı, log dosyası, olay dosyası
 - Limit kontrolü, sesli uyarı, limit dışı ve normale dönüş olayları
@@ -38,3 +40,5 @@ open dist/ScopeRec.app
 USB bağlantısı macOS'ta libusb/PyUSB üzerinden denenir. Cihaz USB Test & Measurement sınıfı olarak görünmüyorsa, macOS erişimi engelliyorsa veya üretici özel sürücü istiyorsa LAN/SCPI bağlantısı daha güvenilir yoldur.
 
 Duraklatma, testi bitirme ve uygulamadan çıkış sırasında ölçüm iş parçacığının bitmesi beklenir. Yarım kalmış USB aktarımı temizlenir; destekleyen USB488 cihazlarında yerel kontrol geri verilip USB arayüzü bırakılır. Güç düğmesiyle kapatmadan önce ölçümü durdurun veya bağlantıyı kesin.
+
+Gerçek USB cihazıyla kanal/ölçüm/renk eşleşmesini kontrol etmek için, uygulama bağlantısı kapalıyken `.venv-macapp/bin/python mac_app/check_hardware_colors.py f4ec:ee38` çalıştırılabilir. Bu kontrol C1/C2 üzerindeki RMS, MEAN ve PKPK cevaplarını grafik, lejant ve tabloyla karşılaştırır; ölçüm sürerken grafik temizlemeyi de dener. Kayıt dosyası oluşturmaz ve cihazın kanal ayarlarını değiştirmez.
