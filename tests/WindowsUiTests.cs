@@ -68,7 +68,7 @@ class WindowsUiTests
             splitter.SplitPosition = originalWidth + 20; Pump();
             Check(serial.Width > originalWidth, "Serial pane cannot grow");
             splitter.SplitPosition = originalWidth; Pump();
-            Check(serial.Width == originalWidth, "Serial pane cannot shrink");
+            Check(serial.Width == originalWidth, "Serial pane cannot shrink: original=" + originalWidth + " actual=" + serial.Width + " position=" + splitter.SplitPosition + " min=" + splitter.MinSize);
             ComboBox window = (ComboBox)Field(f, "cmbWindow");
             Check(window.BackColor != Ui.Th.Input, "Time span has no distinct background");
             Check(window.Parent.ClientRectangle.Contains(window.Bounds), "Time span is clipped");
