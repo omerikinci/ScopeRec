@@ -102,7 +102,7 @@ partial class MainForm
 
         serPanel.Dock = DockStyle.Right;
         serSplit = new GripSplitter(DockStyle.Right);
-        serSplit.MinSize = 390; serSplit.MinExtra = 300;
+        serSplit.MinSize = 390; serSplit.MinExtra = 180;
         serSplit.SplitterMoved += delegate { serWidth = serPanel.Width; };
         serPanel.Visible = serSplit.Visible = serPanelOn;
         // ayirici panelden once eklenir ki panelin solunda yer alsin (Dock: son eklenen once yerlesir)
@@ -163,8 +163,9 @@ partial class MainForm
         s.ChkDtr = new CheckBox(); s.ChkDtr.Text = "DTR"; s.ChkDtr.Checked = s.Dtr; s.ChkDtr.SetBounds(128, 38, 52, 22);
         s.ChkRts = new CheckBox(); s.ChkRts.Text = "RTS"; s.ChkRts.Checked = s.Rts; s.ChkRts.SetBounds(182, 38, 52, 22);
         Button btnClear = new Button();
+        btnClear.Name = "clearSerialButton";
         btnClear.Text = Ui.S("Temizle", "Clear"); btnClear.SetBounds(w - 88, 34, 80, 28); btnClear.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        btnClear.Click += delegate { lock (s.Lock) s.Queue.Clear(); s.Text.Length = 0; s.Log.Clear(); };
+        btnClear.Click += delegate { ClearSerialTerminal(s); };
 
         s.ChkRec = new CheckBox(); s.ChkRec.Text = Ui.S("Dosyaya kaydet", "Record to file"); s.ChkRec.Checked = s.Rec; s.ChkRec.SetBounds(8, 68, 130, 22);
         s.ChkStamp = new CheckBox(); s.ChkStamp.Text = Ui.S("Zaman damgası", "Timestamps"); s.ChkStamp.Checked = s.Stamp; s.ChkStamp.SetBounds(142, 68, 130, 22);
@@ -472,6 +473,12 @@ partial class MainForm
             s.RecNow = false; s.Writer = null; s.WriterPath = null;
             s.Queue.Enqueue("--- " + Ui.S("Kayıt yazılamadı, kayıt durduruldu: ", "Could not write the record, recording stopped: ") + e.Message);
         }
+    }
+
+    void ClearSerialTerminal(SerSession s)
+    {
+        lock (s.Lock) { s.Queue.Clear(); s.Text.Length = 0; }
+        s.Log.Clear();
     }
 
     void ClearSerialSeries()

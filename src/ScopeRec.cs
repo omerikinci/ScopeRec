@@ -219,9 +219,13 @@ partial class MainForm : Form
         cmbChart.SelectedIndex = 0;
         cmbChart.SelectedIndexChanged += delegate { yLo = yHi = double.NaN; }; // baska parametrenin deger araligi anlamsiz
         bar.Controls.Add(cmbChart);
-        bar.Controls.Add(MakeLabel(Ui.S("Zaman aralığı:", "Time span:"), 6));
+        FlowLayoutPanel timeWindow = new FlowLayoutPanel();
+        timeWindow.Name = "timeWindowControl"; timeWindow.Size = new Size(246, 31);
+        timeWindow.Margin = new Padding(6, 0, 0, 0); timeWindow.WrapContents = false;
+        timeWindow.Controls.Add(MakeLabel(Ui.S("Zaman aralığı:", "Time span:"), 6));
+        bar.Controls.Add(timeWindow);
         // yazilabilir liste: hazir araliklardan biri secilir ya da istenen sure yazilir (5 sn - 10 gun)
-        cmbWindow = new ComboBox(); cmbWindow.Width = 100;
+        cmbWindow = new ComboBox(); cmbWindow.Width = 128;
         cmbWindow.Items.AddRange(new object[] { Ui.S("30 sn", "30 s"), Ui.S("2 dk", "2 min"), Ui.S("10 dk", "10 min"), Ui.S("30 dk", "30 min"), Ui.S("1 saat", "1 hour"),
             Ui.S("6 saat", "6 hours"), Ui.S("12 saat", "12 hours"), Ui.S("1 gün", "1 day"), Ui.S("3 gün", "3 days") });
         cmbWindow.Items.Add(Ui.S("10 gün", "10 days"));
@@ -234,11 +238,11 @@ partial class MainForm : Form
         cmbWindow.KeyDown += delegate(object s, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; ApplyWindowText(); chart.Focus(); } };
         cmbWindow.Leave += delegate { ApplyWindowText(); };
         NoStickySelection(cmbWindow);
-        bar.Controls.Add(cmbWindow);
+        timeWindow.Controls.Add(cmbWindow);
         Button btnClear = new Button();
         btnClear.Text = Ui.S("Grafiği temizle", "Clear chart"); btnClear.Size = new Size(120, 25); btnClear.Margin = new Padding(12, 2, 0, 0);
         btnClear.Click += delegate { ClearChart(); };
-        bar.Controls.Add(btnClear);
+        btnClear.Name = "clearChartButton"; btnClear.Dock = DockStyle.Right; btnClear.Width = 132;
         Button btnImage = new Button();
         btnImage.Text = Ui.S("Resim kaydet", "Save image"); btnImage.Size = new Size(104, 25); btnImage.Margin = new Padding(6, 2, 0, 0);
         btnImage.Click += delegate { SaveChartImage(); };
@@ -264,7 +268,9 @@ partial class MainForm : Form
         lblHistory.Margin = new Padding(16, 6, 0, 0);
         lblHistory.ForeColor = Ui.Th.Bad; lblHistory.Visible = false;
         bar.Controls.Add(lblHistory);
-        main.Controls.Add(bar, 0, 1);
+        Panel chartTools = new Panel(); chartTools.Dock = DockStyle.Fill; chartTools.Margin = Padding.Empty;
+        chartTools.Controls.Add(bar); chartTools.Controls.Add(btnClear);
+        main.Controls.Add(chartTools, 0, 1);
 
         Panel cardSplit = new Panel();
         int splitStartY = 0, splitStartHeight = 0;
@@ -517,6 +523,9 @@ partial class MainForm : Form
         BackColor = t.Back; ForeColor = t.Text; // panel, etiket, onay kutusu gibi denetimler bunlari devralir
         topBar.BackColor = t.Bar;
         PaintInputs(this);
+        Control timeWindow = cmbWindow.Parent;
+        timeWindow.BackColor = t.Dark ? Color.FromArgb(29, 57, 65) : Color.FromArgb(206, 226, 229);
+        cmbWindow.BackColor = t.Dark ? Color.FromArgb(34, 65, 74) : Color.FromArgb(225, 240, 241);
         SerialTheme();
         btnStart.ForeColor = Color.White; btnStart.FlatAppearance.BorderSize = 0;
         for (int i = 0; i < 4; i++) chkChan[i].ForeColor = t.Chan[i];
@@ -794,14 +803,15 @@ partial class MainForm : Form
     // Grafikte ve bellekte biriken olcum gecmisini siler; CSV kaydina dokunmaz, olcum suruyorsa devam eder
     void ClearChart()
     {
-        if (!Confirm(Ui.S("Tüm grafik ve alttaki olay listesi silinecektir. Devam edilsin mi?\n\n(Dosyalara yazılmış kayıtlar silinmez.)",
-                          "The whole chart and the event list below will be cleared. Continue?\n\n(Records already written to files are not deleted.)"))) return;
-        lock (lk) { foreach (SeriesData s in series) { s.T.Clear(); s.V.Clear(); s.ResetStats(); } }
-        ClearSerialSeries();
-        lock (lk) marks.Clear();
-        lock (logQueue) logQueue.Clear();
-        lstLog.Items.Clear(); // ekrandaki olay listesi; log dosyasina yazilanlar durur
-        follow = true;
+        lock (lk)
+        {
+            foreach (SeriesData s in series) { s.T.Clear(); s.V.Clear(); }
+            foreach (SeriesData s in serSeries.Values) { s.T.Clear(); s.V.Clear(); }
+            marks.Clear();
+        }
+        foreach (Series s in chart.Series) s.Points.Clear();
+        chart.ChartAreas[0].AxisX.StripLines.Clear();
+        follow = true; zoomWin = 0; pendingStart = double.NaN;
     }
 
     // Tum ayarlari ilk kurulumdaki haline getirir (dil ve tema ayni kalir)
@@ -1618,7 +1628,9 @@ partial class MainForm : Form
                 chart.Series.Add(cs);
             }
             Series c = chart.Series[i];
-            c.LegendText = names[i] + " " + p.Code; c.YAxisType = AxisType.Primary; c.BorderDashStyle = ChartDashStyle.Solid;
+            c.LegendText = names[i] + "_" + p.Code + " [" + p.Unit + "]";
+            c.ToolTip = c.LegendText + ": #VALY";
+            c.YAxisType = AxisType.Primary; c.BorderDashStyle = ChartDashStyle.Solid;
             c.Color = Ui.Th.Chan[Array.IndexOf(Chans, names[i])];
             double[] y = ys[i];
             for (int j = 0; j < y.Length; j++) y[j] *= k;

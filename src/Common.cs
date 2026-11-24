@@ -149,7 +149,8 @@ class GripSplitter : Splitter
     public GripSplitter(DockStyle dock)
     {
         Dock = dock;
-        if (dock == DockStyle.Left || dock == DockStyle.Right) Width = 7; else Height = 7;
+        if (dock == DockStyle.Left || dock == DockStyle.Right) Width = 14; else Height = 14;
+        Cursor = dock == DockStyle.Left || dock == DockStyle.Right ? Cursors.VSplit : Cursors.HSplit;
         BackColor = Ui.Th.Border;
         SetStyle(ControlStyles.ResizeRedraw, true);
     }

@@ -6,6 +6,10 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
+using System.Collections;
+using System.Collections.Generic;
+using System.Text;
+using System.Windows.Forms.DataVisualization.Charting;
 
 class WindowsUiTests
 {
@@ -58,6 +62,19 @@ class WindowsUiTests
             Panel serial = (Panel)Field(f, "serPanel");
             bool wasVisible = serial.Visible;
             toggle.PerformClick(); Pump();
+            Splitter splitter = (Splitter)Field(f, "serSplit");
+            Check(splitter.Width >= 14 && splitter.Cursor == Cursors.VSplit, "Serial grip is too small");
+            int originalWidth = serial.Width;
+            splitter.SplitPosition = originalWidth + 20; Pump();
+            Check(serial.Width > originalWidth, "Serial pane cannot grow");
+            splitter.SplitPosition = originalWidth; Pump();
+            Check(serial.Width == originalWidth, "Serial pane cannot shrink");
+            ComboBox window = (ComboBox)Field(f, "cmbWindow");
+            Check(window.BackColor != Ui.Th.Input, "Time span has no distinct background");
+            Check(window.Parent.ClientRectangle.Contains(window.Bounds), "Time span is clipped");
+            Control[] clear = f.Controls.Find("clearChartButton", true);
+            Check(clear.Length == 1 && clear[0].Parent.ClientRectangle.Contains(clear[0].Bounds), "Clear chart is clipped");
+            SerialClearTest(f);
             Check(serial.Visible != wasVisible, "Serial panel toggle failed");
             toggle.PerformClick(); Pump();
             ComboBox chartChoice = (ComboBox)Field(f, "cmbChart");
@@ -73,6 +90,34 @@ class WindowsUiTests
             f.Close();
         }
         Console.WriteLine("PASS layout " + width + (dark ? " dark" : " light"));
+    }
+
+    static void SerialClearTest(MainForm f)
+    {
+        Array sessions = (Array)Field(f, "ses");
+        object first = sessions.GetValue(0), second = sessions.GetValue(1);
+        Type type = first.GetType();
+        TextBox log = (TextBox)type.GetField("Log").GetValue(first);
+        TextBox otherLog = (TextBox)type.GetField("Log").GetValue(second);
+        StringBuilder text = (StringBuilder)type.GetField("Text").GetValue(first);
+        Queue<string> queue = (Queue<string>)type.GetField("Queue").GetValue(first);
+        text.Append("old data"); queue.Enqueue("pending data"); log.Text = "old data";
+        otherLog.Text = "keep this";
+        string path = Path.GetTempFileName();
+        try
+        {
+            using (StreamWriter writer = new StreamWriter(path))
+            {
+                type.GetField("Writer").SetValue(first, writer);
+                typeof(MainForm).GetMethod("ClearSerialTerminal", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(f, new object[] { first });
+                Check(log.Text.Length == 0 && text.Length == 0 && queue.Count == 0, "Serial terminal was not cleared");
+                Check(otherLog.Text == "keep this", "Clearing affected another terminal");
+                writer.WriteLine("recording continues"); writer.Flush();
+                Check(new FileInfo(path).Length > 0, "Clearing closed serial recording");
+                type.GetField("Writer").SetValue(first, null);
+            }
+        }
+        finally { File.Delete(path); }
     }
 
     static void MeasurementTest()
@@ -117,10 +162,27 @@ class WindowsUiTests
                 DateTime deadline = DateTime.UtcNow.AddSeconds(15);
                 while ((long)Field(f, "samples") < 3 && DateTime.UtcNow < deadline) Pump();
                 Check((long)Field(f, "samples") >= 3, "Windows measurement received no samples");
+                Call(f, "RefreshUi");
+                Chart chart = (Chart)Field(f, "chart");
+                Check(chart.Series.Count > 0, "Chart has no measurement series");
+                Check(chart.Series[0].LegendText == "C1_RMS [V]", "Legend measurement name mismatch");
+                Check(chart.Series[0].Color == Ui.Th.Chan[0], "Legend and channel color mismatch");
+                long before = (long)Field(f, "samples");
+                List<SeriesData> data = (List<SeriesData>)Field(f, "series");
+                long count = data[0].N;
+                Call(f, "ClearChart");
+                Check((bool)Field(f, "running"), "Clear chart stopped measurement");
+                Check((long)Field(f, "samples") >= before && data[0].N >= count, "Clear chart reset statistics");
+                Check(chart.Series[0].Points.Count == 0, "Clear chart retained old points");
+                deadline = DateTime.UtcNow.AddSeconds(5);
+                while ((long)Field(f, "samples") <= before && DateTime.UtcNow < deadline) Pump();
+                Check((long)Field(f, "samples") > before, "Measurement did not continue after clearing");
                 Call(f, "ShiftChart", -0.25);
                 Call(f, "ShowAllTime"); Call(f, "AutoY"); Call(f, "FollowLive");
                 Call(f, "EndTest", false);
                 Check(!(bool)Field(f, "running"), "Measurement did not stop");
+                Call(f, "ClearChart");
+                Check(data[0].T.Count == 0 && data[0].N > 0, "Idle clear lost statistics or retained points");
                 f.Close();
             }
         }
