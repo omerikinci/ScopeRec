@@ -1283,19 +1283,19 @@ class MainWindow(QtWidgets.QMainWindow):
         disabled_bg, disabled_text = (("#263244", "#94a3b8") if theme == "dark"
                                      else ("#e5e7eb", "#6b7280"))
         for button, base, hover, pressed, text in (
-            (self.start_btn, "#15803d", "#166534", "#14532d", "#ffffff"),
-            (self.pause_btn, "#fbbf24", "#f59e0b", "#d97706", "#111827"),
-            (self.end_btn, "#b91c1c", "#991b1b", "#7f1d1d", "#ffffff"),
-            (self.mark_btn, "#1d4ed8", "#1e40af", "#1e3a8a", "#ffffff"),
-            (self.shot_btn, "#0f766e", "#115e59", "#134e4a", "#ffffff"),
-            (self.chart_btn, "#475569", "#334155", "#1e293b", "#ffffff"),
+            (self.start_btn, "#294d3e", "#345b4a", "#203e32", "#e5e7eb"),
+            (self.pause_btn, "#655537", "#746342", "#51442d", "#e5e7eb"),
+            (self.end_btn, "#643b42", "#73474e", "#512f35", "#e5e7eb"),
+            (self.mark_btn, "#344b5b", "#40596a", "#2a3d4a", "#e5e7eb"),
+            (self.shot_btn, "#364b4a", "#425a58", "#2c3e3d", "#e5e7eb"),
+            (self.chart_btn, "#40464d", "#4d545c", "#33383e", "#e5e7eb"),
         ):
             button.setStyleSheet(f"""
                 QPushButton {{ background-color:{base}; color:{text}; border:1px solid {base};
                     border-radius:5px; padding:6px 10px; font-weight:600; }}
                 QPushButton:hover {{ background-color:{hover}; border-color:{hover}; }}
                 QPushButton:pressed {{ background-color:{pressed}; border-color:{pressed}; }}
-                QPushButton:focus {{ border:2px solid {text}; padding:5px 9px; }}
+                QPushButton:focus {{ border:2px solid #9aa4ad; padding:5px 9px; }}
                 QPushButton:disabled {{ background-color:{disabled_bg}; color:{disabled_text};
                     border-color:{disabled_bg}; }}
             """)
