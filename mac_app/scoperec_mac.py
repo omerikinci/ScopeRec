@@ -962,7 +962,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.shot_btn.clicked.connect(self.save_scope_screen)
         self.chart_btn = QtWidgets.QPushButton("Grafik PNG")
         self.chart_btn.clicked.connect(self.save_chart_image)
+        for button, icon in (
+            (self.start_btn, QtWidgets.QStyle.SP_MediaPlay),
+            (self.pause_btn, QtWidgets.QStyle.SP_MediaPause),
+            (self.end_btn, QtWidgets.QStyle.SP_MediaStop),
+            (self.chart_btn, QtWidgets.QStyle.SP_DialogSaveButton),
+        ):
+            button.setIcon(self.style().standardIcon(icon))
+            button.setIconSize(QtCore.QSize(16, 16))
         for i, btn in enumerate([self.start_btn, self.pause_btn, self.end_btn, self.mark_btn, self.shot_btn, self.chart_btn]):
+            btn.setMinimumHeight(34)
             buttons.addWidget(btn, i // 2, i % 2)
 
         work_split = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
@@ -1268,6 +1277,28 @@ class MainWindow(QtWidgets.QMainWindow):
             plot.setBackground("w" if name == "light" else "#0b1220")
             for axis in ("left", "bottom"):
                 plot.getAxis(axis).setTextPen("k" if name == "light" else "#d1d5db")
+        self._style_action_buttons(name)
+
+    def _style_action_buttons(self, theme):
+        disabled_bg, disabled_text = (("#263244", "#94a3b8") if theme == "dark"
+                                     else ("#e5e7eb", "#6b7280"))
+        for button, base, hover, pressed, text in (
+            (self.start_btn, "#15803d", "#166534", "#14532d", "#ffffff"),
+            (self.pause_btn, "#fbbf24", "#f59e0b", "#d97706", "#111827"),
+            (self.end_btn, "#b91c1c", "#991b1b", "#7f1d1d", "#ffffff"),
+            (self.mark_btn, "#1d4ed8", "#1e40af", "#1e3a8a", "#ffffff"),
+            (self.shot_btn, "#0f766e", "#115e59", "#134e4a", "#ffffff"),
+            (self.chart_btn, "#475569", "#334155", "#1e293b", "#ffffff"),
+        ):
+            button.setStyleSheet(f"""
+                QPushButton {{ background-color:{base}; color:{text}; border:1px solid {base};
+                    border-radius:5px; padding:6px 10px; font-weight:600; }}
+                QPushButton:hover {{ background-color:{hover}; border-color:{hover}; }}
+                QPushButton:pressed {{ background-color:{pressed}; border-color:{pressed}; }}
+                QPushButton:focus {{ border:2px solid {text}; padding:5px 9px; }}
+                QPushButton:disabled {{ background-color:{disabled_bg}; color:{disabled_text};
+                    border-color:{disabled_bg}; }}
+            """)
 
     def _pick_dir(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Kayıt klasörü", self.dir_label.text())
