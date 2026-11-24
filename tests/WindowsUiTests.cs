@@ -62,6 +62,8 @@ class WindowsUiTests
             Panel serial = (Panel)Field(f, "serPanel");
             bool wasVisible = serial.Visible;
             toggle.PerformClick(); Pump();
+            Check(serial.Visible != wasVisible, "Serial panel toggle failed");
+            toggle.PerformClick(); Pump();
             Splitter splitter = (Splitter)Field(f, "serSplit");
             Check(splitter.Width >= 14 && splitter.Cursor == Cursors.VSplit, "Serial grip is too small");
             int originalWidth = serial.Width;
@@ -75,8 +77,6 @@ class WindowsUiTests
             Control[] clear = f.Controls.Find("clearChartButton", true);
             Check(clear.Length == 1 && clear[0].Parent.ClientRectangle.Contains(clear[0].Bounds), "Clear chart is clipped");
             SerialClearTest(f);
-            Check(serial.Visible != wasVisible, "Serial panel toggle failed");
-            toggle.PerformClick(); Pump();
             ComboBox chartChoice = (ComboBox)Field(f, "cmbChart");
             Control bar = chartChoice.Parent;
             foreach (Control c in bar.Controls)
