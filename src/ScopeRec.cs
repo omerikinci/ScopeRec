@@ -146,6 +146,12 @@ partial class MainForm : Form
     List<SeriesData> series = new List<SeriesData>();
     readonly Queue<string> logQueue = new Queue<string>();
     Thread worker;
+    volatile ILink activeLink;
+    readonly ManualResetEvent stopSignal = new ManualResetEvent(false);
+    volatile ILink probeLink;
+    int deviceJobs;
+    bool closeAfterStop;
+    bool endAfterStop;
     Config cfg;
     volatile bool running, wantRecord, connected, alarmOut;
     volatile string shotRequest, recFile = "";
@@ -759,11 +765,21 @@ partial class MainForm : Form
     // Kapatma onayi: suren test yanlislikla kapatilmasin
     void OnClosingForm(FormClosingEventArgs e)
     {
-        if (testActive && e.CloseReason == CloseReason.UserClosing &&
+        if (testActive && !closeAfterStop && e.CloseReason == CloseReason.UserClosing &&
             !Confirm(Ui.S("Bir test sürüyor. Pencere kapatılırsa test bitirilir ve kayıt dosyaları kapatılır.\n\nKapatılsın mı?",
                           "A test is in progress. Closing the window ends the test and closes the record files.\n\nClose anyway?")))
         { e.Cancel = true; return; }
-        EndTest(false); SaveSettings(); SerialDisconnectAll();
+        EndTest(false);
+        if ((worker != null && worker.IsAlive) || Interlocked.CompareExchange(ref deviceJobs, 0, 0) > 0)
+        {
+            closeAfterStop = true;
+            ILink probe = probeLink;
+            if (probe != null) { try { probe.Cancel(); } catch (ObjectDisposedException) { } }
+            e.Cancel = true;
+            return;
+        }
+        closeAfterStop = false;
+        SaveSettings(); SerialDisconnectAll();
         try { SetThreadExecutionState(0x80000000u); } catch (Exception) { }
     }
 
@@ -1043,6 +1059,7 @@ partial class MainForm : Form
         startedAt = DateTime.Now;
         testActive = true; testStem = null;
         running = true; uiRunning = true;
+        stopSignal.Reset();
         wantRecord = chkRecord.Checked;
         foreach (Control ctl in lockWhileRunning) ctl.Enabled = false;
         SetStartButton();
@@ -1058,7 +1075,14 @@ partial class MainForm : Form
     {
         if (!running && !uiRunning) return;
         running = false;
-        if (worker != null) worker.Join(6000);
+        stopSignal.Set();
+        ILink current = activeLink;
+        if (current != null) { try { current.Cancel(); } catch (ObjectDisposedException) { } }
+        if (worker != null && !worker.Join(300))
+        {
+            Log(Ui.S("Cihaz bağlantısının kapanması bekleniyor", "Waiting for the instrument connection to close"));
+            return;
+        }
         worker = null; uiRunning = false;
         SetStartButton();
     }
@@ -1066,9 +1090,11 @@ partial class MainForm : Form
     // Kaldigi yerden devam: seriler, zaman ekseni ve kayit dosyalari ayni; aradaki bosluk grafikte kesik olarak gorunur
     void ResumeMeasure()
     {
+        if (worker != null && worker.IsAlive) return;
         double t = plotClock.Elapsed.TotalSeconds;
         lock (lk) foreach (SeriesData s in series) if (s.T.Count > 0) s.Add(t, double.NaN); // cizgi duraklamanin ustunden gecmesin
         running = true; uiRunning = true;
+        stopSignal.Reset();
         wantRecord = chkRecord.Checked;
         SetStartButton();
         worker = new Thread(Work);
@@ -1082,7 +1108,10 @@ partial class MainForm : Form
         if (!testActive) return;
         if (ask && !Confirm(Ui.S("Test bitirilsin mi?\n\nKayıt dosyaları kapatılır; yeniden başlatınca grafik ve süre sıfırdan başlar.",
                                  "End the test?\n\nThe record files are closed; starting again begins a new test from zero."))) return;
+        endAfterStop = true;
         StopMeasure();
+        if (worker != null && worker.IsAlive) return;
+        endAfterStop = false;
         testActive = false;
         string stem = testStem;
         testStem = null; measStem = null;
@@ -1188,10 +1217,12 @@ partial class MainForm : Form
                     if (u == null)
                     {
                         u = OpenLink(c);
+                        activeLink = u;
+                        if (!running) break;
                         if (u == null)
                         {
                             connected = false; deviceState = 2;
-                            Thread.Sleep(1000);
+                            stopSignal.WaitOne(1000);
                             continue;
                         }
                         u.Clear(); u.SetTimeout(3000);
@@ -1287,18 +1318,20 @@ partial class MainForm : Form
                             if (evCsv != null) evCsv.WriteLine(stamp + Sep + Ui.S("normale dondu", "back to normal") + Sep + Plain(v, 4) + Sep + (t - outSince).ToString("F2", Cur));
                         }
                     }
-                    Thread.Sleep(Math.Max(c.Interval, MinInterval));
+                    stopSignal.WaitOne(Math.Max(c.Interval, MinInterval));
                 }
                 catch (Exception e)
                 {
+                    if (!running) break;
                     if (!(e is IOException || e is TimeoutException)) throw;
                     errs++;
                     Log(Ui.S("İletişim hatası: ", "Communication error: ") + e.Message);
                     if (errs >= 3 && u != null)
                     {
+                        activeLink = null;
                         u.Dispose(); u = null;
                         connected = false; deviceState = 3;
-                        Thread.Sleep(1000);
+                        stopSignal.WaitOne(1000);
                     }
                     else if (u != null)
                     {
@@ -1311,6 +1344,7 @@ partial class MainForm : Form
         catch (Exception e) { Log(Ui.S("Beklenmeyen hata: ", "Unexpected error: ") + e.Message); running = false; }
         finally
         {
+            activeLink = null;
             if (csv != null) csv.Close();
             if (evCsv != null) evCsv.Close();
             if (u != null) u.Dispose();
@@ -1341,10 +1375,14 @@ partial class MainForm : Form
     // Olcum calismiyorken cihaza kisa sureligine baglanir
     bool WithDevice(Config c, Action<ILink, Dialect> act)
     {
+        if (closeAfterStop) return false;
+        Interlocked.Increment(ref deviceJobs);
         try
         {
             using (ILink u = OpenLink(c))
             {
+                probeLink = u;
+                if (closeAfterStop) return false;
                 if (u == null && running) return false; // cihaz olcum is parcaciginda acik; durum yazisini bozma
                 if (u == null) { connected = false; deviceState = 4; return false; }
                 u.Clear(); u.SetTimeout(3000);
@@ -1356,6 +1394,7 @@ partial class MainForm : Form
             }
         }
         catch (Exception e) { Log(Ui.S("Hata: ", "Error: ") + e.Message); return false; }
+        finally { probeLink = null; Interlocked.Decrement(ref deviceJobs); }
     }
 
     void TakeShot()
@@ -1419,6 +1458,11 @@ partial class MainForm : Form
 
     void RefreshUi()
     {
+        if (closeAfterStop && (worker == null || !worker.IsAlive) && Interlocked.CompareExchange(ref deviceJobs, 0, 0) == 0)
+        {
+            Close();
+            return;
+        }
         lock (logQueue)
             while (logQueue.Count > 0)
             {
@@ -1428,6 +1472,7 @@ partial class MainForm : Form
                 if (lstLog.Items.Count > 1000) lstLog.Items.RemoveAt(lstLog.Items.Count - 1);
             }
         if (!running && uiRunning) StopMeasure(); // is parcacigi kendi durduysa
+        if (endAfterStop && (worker == null || !worker.IsAlive)) EndTest(false);
 
         string deviceText = DeviceText();
         lblDevice.Text = deviceText.Length > 0 ? "● " + deviceText : "";
@@ -1573,7 +1618,7 @@ partial class MainForm : Form
                 chart.Series.Add(cs);
             }
             Series c = chart.Series[i];
-            c.LegendText = names[i]; c.YAxisType = AxisType.Primary; c.BorderDashStyle = ChartDashStyle.Solid;
+            c.LegendText = names[i] + " " + p.Code; c.YAxisType = AxisType.Primary; c.BorderDashStyle = ChartDashStyle.Solid;
             c.Color = Ui.Th.Chan[Array.IndexOf(Chans, names[i])];
             double[] y = ys[i];
             for (int j = 0; j < y.Length; j++) y[j] *= k;

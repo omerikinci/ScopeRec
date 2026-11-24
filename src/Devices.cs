@@ -16,11 +16,13 @@ interface ILink : IDisposable
     string QueryText(string cmd);
     void Clear();
     void SetTimeout(uint ms);
+    void Cancel();
 }
 
 // Ag uzerinden ham SCPI soketi (cogu cihazda port 5025, Rigol'de 5555)
 class TcpLink : ILink
 {
+    volatile bool cancelled;
     TcpClient client;
     NetworkStream s;
 
@@ -50,6 +52,7 @@ class TcpLink : ILink
 
     public void Write(string cmd)
     {
+        if (cancelled) throw new IOException("olcum durduruldu");
         byte[] b = Encoding.ASCII.GetBytes(cmd + "\n");
         s.Write(b, 0, b.Length);
     }
@@ -119,7 +122,8 @@ class TcpLink : ILink
         while (s.DataAvailable) s.Read(buf, 0, buf.Length);
     }
 
-    public void Dispose() { if (client != null) { client.Close(); client = null; } }
+    public void Cancel() { cancelled = true; if (client != null) client.Close(); }
+    public void Dispose() { Cancel(); }
 }
 
 // Bir markanin olcum komut seti. Parametreler uygulamanin ortak kodlariyla istenir (RMS, MEAN, PKPK, ...).

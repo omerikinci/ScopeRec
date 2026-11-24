@@ -129,6 +129,12 @@ class ScpiError(Exception):
     pass
 
 
+def check_cancelled(client):
+    event = getattr(client, "cancel_event", None)
+    if event is not None and event.is_set():
+        raise InterruptedError("Ölçüm durduruldu")
+
+
 class ScpiClient:
     def __init__(self, address, timeout=3.0):
         host = address.strip()
@@ -197,6 +203,7 @@ class ScpiClient:
 
     def query(self, cmd):
         with self.lock:
+            check_cancelled(self)
             self.sock.sendall((cmd.rstrip() + "\n").encode("ascii", "replace"))
             return self._read_unlocked()
 
@@ -258,14 +265,26 @@ class UsbTmcClient:
             raise ScpiError("PyUSB/libusb yüklü değil")
         self.timeout_ms = int(timeout * 1000)
         self.tag = int(time.time()) & 0x7f or 1
+        self._closed = False
+        self._pending_read = False
+        self._supports_local = False
+        self._claimed = False
+        self.intf = None
         self.dev = self._find_device(selector)
         if self.dev is None:
             raise ScpiError("USBTMC cihazı bulunamadı")
         try:
-            self.dev.set_configuration()
+            self._configure_interface()
         except Exception:
-            pass
-        self.cfg = self.dev.get_active_configuration()
+            self.close()
+            raise
+
+    def _configure_interface(self):
+        try:
+            self.cfg = self.dev.get_active_configuration()
+        except usb.core.USBError:
+            self.dev.set_configuration()
+            self.cfg = self.dev.get_active_configuration()
         self.intf = None
         self.ep_in = None
         self.ep_out = None
@@ -281,6 +300,7 @@ class UsbTmcClient:
         except Exception:
             pass
         usb.util.claim_interface(self.dev, self.intf.bInterfaceNumber)
+        self._claimed = True
         for ep in self.intf:
             if usb.util.endpoint_type(ep.bmAttributes) != usb.util.ENDPOINT_TYPE_BULK:
                 continue
@@ -289,7 +309,13 @@ class UsbTmcClient:
             else:
                 self.ep_out = ep
         if self.ep_in is None or self.ep_out is None:
+            self.close()
             raise ScpiError("USBTMC bulk uçları bulunamadı")
+        try:
+            caps = self.dev.ctrl_transfer(0xA1, 7, 0, self.intf.bInterfaceNumber, 24, timeout=250)
+            self._supports_local = len(caps) >= 15 and caps[0] == 1 and bool(caps[14] & 2)
+        except usb.core.USBError:
+            pass
 
     @staticmethod
     def devices():
@@ -343,8 +369,20 @@ class UsbTmcClient:
         return None
 
     def close(self):
+        if self._closed:
+            return
+        self._closed = True
+        if self._pending_read:
+            self.clear()
+        if self._supports_local:
+            for request in (161, 160):  # USB488 GO_TO_LOCAL, then deassert REN.
+                try:
+                    self.dev.ctrl_transfer(0xA1, request, 0, self.intf.bInterfaceNumber, 1, timeout=250)
+                except usb.core.USBError:
+                    pass
         try:
-            usb.util.release_interface(self.dev, self.intf.bInterfaceNumber)
+            if self._claimed:
+                usb.util.release_interface(self.dev, self.intf.bInterfaceNumber)
         except Exception:
             pass
         try:
@@ -370,8 +408,10 @@ class UsbTmcClient:
         self.ep_out.write(packet, self.timeout_ms)
 
     def read(self):
+        self._pending_read = True
         out = bytearray()
         while True:
+            check_cancelled(self)
             tag = self._next_tag()
             req = bytearray(12)
             req[0] = 2
@@ -392,6 +432,7 @@ class UsbTmcClient:
                 if raw[1] == tag:
                     out.extend(raw[12:12 + got])
                     while got < size:
+                        check_cancelled(self)
                         read_len = self.READ_PACKET
                         chunk = bytes(self.ep_in.read(read_len, self.timeout_ms))
                         if not chunk:
@@ -400,6 +441,7 @@ class UsbTmcClient:
                         out.extend(chunk[:take])
                         got += take
                     if eom:
+                        self._pending_read = False
                         return bytes(out)
                     break
                 stale += 1
@@ -407,6 +449,7 @@ class UsbTmcClient:
                     raise ScpiError("USBTMC eski cevaplar temizlenemedi")
 
     def query(self, cmd):
+        check_cancelled(self)
         self.write(cmd)
         return self.read()
 
@@ -414,17 +457,22 @@ class UsbTmcClient:
         return self.query(cmd).decode("ascii", "replace").strip("\r\n\0 ")
 
     def clear(self):
-        for _ in range(1024):
+        deadline = time.monotonic() + 1.5
+        for _ in range(64):
+            if time.monotonic() >= deadline:
+                break
             try:
-                self.ep_in.read(self.READ_PACKET, 50)
+                self.ep_in.read(self.READ_PACKET, 20)
             except Exception:
                 break
         interface = self.intf.bInterfaceNumber
         try:
-            result = self.dev.ctrl_transfer(0xA1, 5, 0, interface, 1, timeout=500)
+            result = self.dev.ctrl_transfer(0xA1, 5, 0, interface, 1, timeout=200)
             if result and result[0] == 1:
                 for _ in range(50):
-                    state = self.dev.ctrl_transfer(0xA1, 6, 0, interface, 2, timeout=500)
+                    if time.monotonic() >= deadline:
+                        break
+                    state = self.dev.ctrl_transfer(0xA1, 6, 0, interface, 2, timeout=200)
                     if state[0] != 2:
                         break
                     if len(state) > 1 and state[1] & 1:
@@ -438,6 +486,7 @@ class UsbTmcClient:
             self.dev.clear_halt(self.ep_out.bEndpointAddress)
         except usb.core.USBError:
             pass
+        self._pending_read = False
 
 
 def open_instrument(config):
@@ -637,7 +686,6 @@ class MeasurementWorker(QtCore.QThread):
     sample = QtCore.Signal(float, dict)
     status = QtCore.Signal(str)
     log = QtCore.Signal(str)
-    stopped = QtCore.Signal()
 
     def __init__(self, config):
         super().__init__()
@@ -655,7 +703,7 @@ class MeasurementWorker(QtCore.QThread):
 
     def run(self):
         errors = 0
-        start = time.monotonic()
+        start = time.monotonic() - self.config.get("time_offset", 0.0)
         codes = self.config["params"]
         try:
             while not self.stop_event.is_set():
@@ -663,6 +711,7 @@ class MeasurementWorker(QtCore.QThread):
                     if self.client is None:
                         self.status.emit("Bağlanıyor")
                         self.client = open_instrument(self.config)
+                        self.client.cancel_event = self.stop_event
                         try:
                             self.client.clear()
                         except Exception:
@@ -685,6 +734,8 @@ class MeasurementWorker(QtCore.QThread):
 
                     values = {}
                     for ch in self.config["channels"]:
+                        if self.stop_event.is_set():
+                            break
                         measured = self.dialect.measure(self.client, int(ch[1]), codes)
                         for code, value in zip(codes, measured):
                             values[f"{ch}_{code}"] = value
@@ -693,6 +744,8 @@ class MeasurementWorker(QtCore.QThread):
                     wait = max(0.04, self.config["interval_ms"] / 1000.0)
                     self.stop_event.wait(wait)
                 except Exception as exc:
+                    if self.stop_event.is_set():
+                        break
                     errors += 1
                     self.log.emit(f"İletişim hatası: {exc}")
                     if self.client:
@@ -704,7 +757,6 @@ class MeasurementWorker(QtCore.QThread):
             if self.client:
                 self.client.close()
             self.status.emit("Durdu")
-            self.stopped.emit()
 
 
 class SerialWorker(QtCore.QThread):
@@ -801,6 +853,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings_path = Path.home() / ".scoperec_mac.json"
         self.series = {}
         self.curves = {}
+        self.viewer_curves = {}
         self.serial_workers = {}
         self.serial_logs = {}
         self.mark_lines = []
@@ -810,6 +863,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.instrument_id = ""
         self.recorder = None
         self.running = False
+        self.test_active = False
+        self.test_started_at = 0.0
+        self._ending_test = False
+        self._closing = False
         self.dirty_plot = False
         self.plot_interacting = False
         self.plot_revisions = {}
@@ -830,6 +887,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui_timer = QtCore.QTimer(self)
         self.ui_timer.timeout.connect(self._refresh_stats)
         self.ui_timer.start(250)
+        self._update_measurement_actions()
 
     def _build_ui(self):
         central = QtWidgets.QWidget()
@@ -1024,6 +1082,8 @@ class MainWindow(QtWidgets.QMainWindow):
         nav.addWidget(self.auto_y_btn)
         nav.addStretch(1)
         plot_lay.addLayout(nav)
+        self.plot_legend = self._create_legend(self.curves)
+        plot_lay.addWidget(self.plot_legend)
         self.plot = pg.PlotWidget()
         self.plot.showGrid(x=True, y=True, alpha=0.25)
         self.plot.setLabel("bottom", "Süre", units="s")
@@ -1091,6 +1151,8 @@ class MainWindow(QtWidgets.QMainWindow):
         bar.addWidget(self.open_csv_btn)
         bar.addWidget(self.viewer_info, 1)
         viewer_lay.addLayout(bar)
+        self.viewer_legend = self._create_legend(self.viewer_curves)
+        viewer_lay.addWidget(self.viewer_legend)
         self.viewer_plot = pg.PlotWidget()
         self.viewer_plot.showGrid(x=True, y=True, alpha=0.25)
         viewer_lay.addWidget(self.viewer_plot, 1)
@@ -1104,6 +1166,33 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setStatusBar(self.status)
         self.status.showMessage("Hazır")
         self._connection_changed()
+
+    def _create_legend(self, curves):
+        legend = QtWidgets.QListWidget()
+        legend.setFlow(QtWidgets.QListView.LeftToRight)
+        legend.setWrapping(True)
+        legend.setResizeMode(QtWidgets.QListView.Adjust)
+        legend.setMovement(QtWidgets.QListView.Static)
+        legend.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        legend.setFixedHeight(64)
+        legend.setSpacing(3)
+        legend.setIconSize(QtCore.QSize(24, 8))
+        legend.itemChanged.connect(lambda item: curves[item.data(QtCore.Qt.UserRole)].setVisible(
+            item.checkState() == QtCore.Qt.Checked) if item.data(QtCore.Qt.UserRole) in curves else None)
+        return legend
+
+    @staticmethod
+    def _series_swatch(color):
+        pixmap = QtGui.QPixmap(24, 8)
+        pixmap.fill(QtGui.QColor(color))
+        return QtGui.QIcon(pixmap)
+
+    def _add_legend_item(self, legend, key, label, color):
+        item = QtWidgets.QListWidgetItem(self._series_swatch(color), label)
+        item.setData(QtCore.Qt.UserRole, key)
+        item.setCheckState(QtCore.Qt.Checked)
+        item.setToolTip(label + " — çizgiyi göster/gizle")
+        legend.addItem(item)
 
     def _set_serial_side_panel(self, enabled):
         if not hasattr(self, "serial_tabs"):
@@ -1239,6 +1328,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.connection_state.setText("Bağlantı kurulamadı: " + error)
             self.append_log("Bağlantı hatası: " + error)
             self._connection_controls(True)
+        self._update_measurement_actions()
+        if self._closing:
+            QtCore.QTimer.singleShot(0, self.close)
 
     def _connection_changed(self, *args):
         is_usb = self.connection_mode() == "USB"
@@ -1320,6 +1412,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.series.clear()
         self.curves.clear()
         self.plot_revisions.clear()
+        self.plot_legend.clear()
         self.plot.clear()
         self.limit_series.clear()
         idx = 0
@@ -1331,16 +1424,18 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.curves[key] = self.plot.plot([], [], pen=pg.mkPen(color, width=1), antialias=False, name=key)
                 self.curves[key].setDownsampling(auto=True, method="peak")
                 self.curves[key].setClipToView(True)
+                self._add_legend_item(self.plot_legend, key, f"{ch} - {code} [{PARAM_UNITS.get(code, '')}]", color)
                 self.limit_series.addItem(key)
                 idx += 1
         self.stats_table.setRowCount(len(self.series))
         for row, key in enumerate(self.series):
-            self.stats_table.setItem(row, 0, QtWidgets.QTableWidgetItem(key))
+            label = QtWidgets.QTableWidgetItem(self._series_swatch(self.series[key].color), key)
+            self.stats_table.setItem(row, 0, label)
             for col in range(1, 5):
                 self.stats_table.setItem(row, col, QtWidgets.QTableWidgetItem("—"))
 
     def start_measure(self):
-        if self.worker or self.connection_worker:
+        if self.worker or self.connection_worker or self._ending_test or self._closing:
             return
         if self.connection_mode() == "LAN" and not self.address.text().strip():
             QtWidgets.QMessageBox.warning(self, APP_NAME, "Osiloskop IP adresini girin.")
@@ -1348,14 +1443,21 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self.selected_channels() or not self.selected_params():
             QtWidgets.QMessageBox.warning(self, APP_NAME, "En az bir kanal ve bir ölçüm seçin.")
             return
-        self._prepare_series()
-        self.sample_count = 0
-        self.violation_count = 0
-        self.out_of_limit = False
-        self.recorder = None
-        if self.record_check.isChecked():
-            self.recorder = Recorder(self.dir_label.text(), self.test_name.text(), list(self.series.keys()))
-            self.append_log(f"Kayıt başladı: {self.recorder.stem}.csv")
+        if not self.test_active:
+            self._prepare_series()
+            self.sample_count = 0
+            self.current_t = 0.0
+            self.violation_count = 0
+            self.out_of_limit = False
+            self.test_started_at = time.monotonic()
+            self.test_active = True
+            if self.record_check.isChecked():
+                self.recorder = Recorder(self.dir_label.text(), self.test_name.text(), list(self.series.keys()))
+                self.append_log(f"Kayıt başladı: {self.recorder.stem}.csv")
+        else:
+            gap = time.monotonic() - self.test_started_at
+            for series in self.series.values():
+                series.add(gap, math.nan)
         config = {
             "connection": self.connection_mode(),
             "address": self.address.text().strip(),
@@ -1364,10 +1466,12 @@ class MainWindow(QtWidgets.QMainWindow):
             "channels": self.selected_channels(),
             "params": self.selected_params(),
             "interval_ms": self.interval.value(),
+            "time_offset": time.monotonic() - self.test_started_at,
         }
         self.worker = MeasurementWorker(config)
         if self.idle_client:
             self.worker.client = self.idle_client
+            self.worker.client.cancel_event = self.worker.stop_event
             self.worker.dialect = Dialect.pick(self.dialect.currentIndex(), self.instrument_id)
             self.idle_client = None
         self._connection_controls(False)
@@ -1376,31 +1480,70 @@ class MainWindow(QtWidgets.QMainWindow):
         self.worker.status.connect(self.status.showMessage)
         self.worker.status.connect(self.connection_state.setText)
         self.worker.log.connect(self.append_log)
-        self.worker.stopped.connect(self._worker_stopped)
+        self.worker.finished.connect(self._worker_stopped)
         self.worker.start()
         self.running = True
+        self._update_measurement_actions()
         self._save_settings()
 
     def pause_measure(self):
         if self.worker:
             self.worker.stop()
-            self.worker.wait(4000)
+            self.connection_state.setText("Ölçüm durduruluyor, cihaz bırakılıyor…")
+            self.start_btn.setEnabled(False)
+            self.pause_btn.setEnabled(False)
+            self.connect_btn.setEnabled(False)
 
     def end_test(self):
-        self.pause_measure()
+        self._ending_test = True
+        if self.worker:
+            self.pause_measure()
+            return
+        if self.idle_client:
+            self.idle_client.close()
+            self.idle_client = None
+            self.connection_state.setText("Bağlı değil")
+            self.connect_btn.setText("Osiloskopa bağlan")
+        self._finalize_test()
+
+    def _finalize_test(self):
         if self.recorder:
-            self.recorder.log(0, f"Test bitti. Okuma: {self.sample_count}, limit dışı: {self.violation_count}")
-            self.recorder.close()
-            self.append_log(f"Dosyalar kapatıldı: {self.recorder.stem}")
+            recorder = self.recorder
             self.recorder = None
+            recorder.log(self.current_t, f"Test bitti. Okuma: {self.sample_count}, limit dışı: {self.violation_count}")
+            recorder.close()
+            self.append_log(f"Dosyalar kapatıldı: {recorder.stem}")
+        self.test_active = False
+        self._ending_test = False
+        self._connection_controls(True)
+        self._update_measurement_actions()
+
+    def _update_measurement_actions(self):
+        busy = self.worker is not None or self.connection_worker is not None
+        self.start_btn.setText("Devam et" if self.test_active and not self.worker else "Başlat")
+        self.start_btn.setEnabled(not busy and not self._ending_test and not self._closing)
+        self.pause_btn.setEnabled(self.worker is not None and not self._ending_test)
+        self.end_btn.setEnabled(self.test_active or self.idle_client is not None)
+        for control in (*self.channel_checks, self.param_list, self.record_check,
+                        self.test_name, self.dir_label, self.dir_button):
+            control.setEnabled(not self.test_active)
 
     def _worker_stopped(self):
+        finished_worker = self.worker
         self.worker = None
         self.running = False
         self.connect_btn.setText("Osiloskopa bağlan")
         self.connection_state.setText("Bağlı değil")
-        self._connection_controls(True)
+        self.connect_btn.setEnabled(True)
+        self._connection_controls(not self.test_active)
         self.append_log("Ölçüm durdu")
+        if finished_worker:
+            finished_worker.deleteLater()
+        if self._ending_test:
+            self._finalize_test()
+        self._update_measurement_actions()
+        if self._closing:
+            QtCore.QTimer.singleShot(0, self.close)
 
     def on_sample(self, t, values):
         self.sample_count += 1
@@ -1531,7 +1674,15 @@ class MainWindow(QtWidgets.QMainWindow):
         Path(self.dir_label.text()).mkdir(parents=True, exist_ok=True)
         path = str(Path(self.dir_label.text()) / f"grafik_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
         exporter = pg.exporters.ImageExporter(self.plot.plotItem)
-        exporter.export(path)
+        legend = pg.LegendItem(offset=(10, 10), colCount=2)
+        legend.setParentItem(self.plot.getViewBox())
+        for key, curve in self.curves.items():
+            if curve.isVisible():
+                legend.addItem(curve, key)
+        try:
+            exporter.export(path)
+        finally:
+            self.plot.scene().removeItem(legend)
         self.append_log(f"Grafik kaydedildi: {path}")
 
     def toggle_serial(self, name, state):
@@ -1580,6 +1731,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.curves[full] = self.plot.plot([], [], pen=pg.mkPen(color, width=1, style=QtCore.Qt.DotLine), antialias=False, name=full)
                 self.curves[full].setDownsampling(auto=True, method="peak")
                 self.curves[full].setClipToView(True)
+                self._add_legend_item(self.plot_legend, full, full, color)
             self.series[full].add(t, value)
             self.dirty_plot = True
 
@@ -1590,6 +1742,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def load_recording(self, path):
         self.viewer_plot.clear()
+        self.viewer_curves.clear()
+        self.viewer_legend.clear()
         self.viewer_events.clear()
         try:
             with open(path, newline="", encoding="utf-8-sig") as f:
@@ -1611,7 +1765,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 for i, h in enumerate(header[2:], 2):
                     ys[h].append(safe_float(row[i]) if i < len(row) else math.nan)
             for i, (key, vals) in enumerate(ys.items()):
-                self.viewer_plot.plot(xs, vals, pen=pg.mkPen(COLORS[i % len(COLORS)], width=1), antialias=False, autoDownsample=True, clipToView=True, name=key)
+                color = COLORS[i % len(COLORS)]
+                self.viewer_curves[key] = self.viewer_plot.plot(xs, vals, pen=pg.mkPen(color, width=1), antialias=False, autoDownsample=True, clipToView=True, name=key)
+                self._add_legend_item(self.viewer_legend, key, key, color)
             base = str(Path(path).with_suffix(""))
             log_path = base + "_log.txt"
             if os.path.exists(log_path):
@@ -1654,9 +1810,14 @@ class MainWindow(QtWidgets.QMainWindow):
             pass
 
     def closeEvent(self, event):
-        if self.connection_worker and self.connection_worker.isRunning():
+        self._closing = True
+        if self.connection_worker is not None:
             event.ignore()
-            self.status.showMessage("Bağlantı denemesi bitince pencereyi kapatabilirsiniz")
+            self.status.showMessage("Bağlantı denemesi bitiriliyor…")
+            return
+        if self.worker is not None:
+            self.end_test()
+            event.ignore()
             return
         if self.idle_client:
             self.idle_client.close()
@@ -1665,7 +1826,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.end_test()
         for worker in list(self.serial_workers.values()):
             worker.stop()
-            worker.wait(1000)
+        if any(worker.isRunning() for worker in self.serial_workers.values()):
+            event.ignore()
+            QtCore.QTimer.singleShot(100, self.close)
+            return
         event.accept()
 
 

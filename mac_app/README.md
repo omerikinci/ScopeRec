@@ -24,6 +24,8 @@ open dist/ScopeRec.app
 - Siglent, Rigol, Keysight/Agilent, Tektronix ve genel SCPI ölçüm komut setleri
 - C1-C4 kanal seçimi, RMS/MEAN/PKPK/FREQ/PER ve diğer ölçüm parametreleri
 - Canlı grafik, canlı son/min/maks/ortalama tablosu
+- Grafik üzerinde kanal/ölçüm adıyla renkli lejant; kutucuklarla çizgileri ayrı ayrı gösterme/gizleme ve tabloda eşleşen renkler
+- Duraklat/devam et sırasında aynı grafik, zaman ekseni ve kayıt dosyasını koruma
 - CSV ölçüm kaydı, log dosyası, olay dosyası
 - Limit kontrolü, sesli uyarı, limit dışı ve normale dönüş olayları
 - İşaret koyma ve grafikte işaret çizgisi
@@ -34,3 +36,5 @@ open dist/ScopeRec.app
 - Kayıt görüntüleyici: CSV ve yanındaki log dosyasını açıp grafikte gösterme
 
 USB bağlantısı macOS'ta libusb/PyUSB üzerinden denenir. Cihaz USB Test & Measurement sınıfı olarak görünmüyorsa, macOS erişimi engelliyorsa veya üretici özel sürücü istiyorsa LAN/SCPI bağlantısı daha güvenilir yoldur.
+
+Duraklatma, testi bitirme ve uygulamadan çıkış sırasında ölçüm iş parçacığının bitmesi beklenir. Yarım kalmış USB aktarımı temizlenir; destekleyen USB488 cihazlarında yerel kontrol geri verilip USB arayüzü bırakılır. Güç düğmesiyle kapatmadan önce ölçümü durdurun veya bağlantıyı kesin.

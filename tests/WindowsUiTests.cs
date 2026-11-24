@@ -132,6 +132,31 @@ class WindowsUiTests
         Console.WriteLine("PASS Windows LAN measurement, chart navigation and stop");
     }
 
+    static void CancelReadTest()
+    {
+        TcpListener server = new TcpListener(IPAddress.Loopback, 0);
+        server.Start();
+        using (ILink link = TcpLink.Open("127.0.0.1:" + ((IPEndPoint)server.LocalEndpoint).Port, 15000))
+        using (TcpClient peer = server.AcceptTcpClient())
+        {
+            bool interrupted = false;
+            Thread reader = new Thread(delegate()
+            {
+                try { link.QueryText("*IDN?"); }
+                catch (IOException) { interrupted = true; }
+                catch (ObjectDisposedException) { interrupted = true; }
+            });
+            reader.IsBackground = true; reader.Start();
+            peer.ReceiveTimeout = 2000;
+            peer.GetStream().ReadByte();
+            link.Cancel();
+            Check(reader.Join(2000), "Stop did not interrupt a pending Windows read");
+            Check(interrupted, "Pending read was not cancelled");
+        }
+        server.Stop();
+        Console.WriteLine("PASS cancellation of a pending instrument read");
+    }
+
     [STAThread]
     static int Main()
     {
@@ -142,6 +167,7 @@ class WindowsUiTests
             foreach (bool dark in new bool[] { false, true })
                 foreach (int width in new int[] { 900, Math.Max(900, Screen.PrimaryScreen.WorkingArea.Width - 40) }) LayoutTest(width, dark);
             MeasurementTest();
+            CancelReadTest();
             Console.WriteLine("WINDOWS TESTS PASSED");
             return 0;
         }

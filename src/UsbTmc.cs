@@ -32,11 +32,15 @@ class Usb : ILink
     [DllImport("winusb.dll", SetLastError = true)] static extern bool WinUsb_ReadPipe(IntPtr h, byte pipe, byte[] buf, uint len, out uint n, IntPtr ov);
     [DllImport("winusb.dll", SetLastError = true)] static extern bool WinUsb_WritePipe(IntPtr h, byte pipe, byte[] buf, uint len, out uint n, IntPtr ov);
     [DllImport("winusb.dll", SetLastError = true)] static extern bool WinUsb_ResetPipe(IntPtr h, byte pipe);
+    [DllImport("winusb.dll", SetLastError = true)] static extern bool WinUsb_AbortPipe(IntPtr h, byte pipe);
     [DllImport("winusb.dll", SetLastError = true)] static extern bool WinUsb_ControlTransfer(IntPtr h, Setup s, byte[] buf, uint len, out uint n, IntPtr ov);
 
     SafeFileHandle file;
     IntPtr h;
     byte epIn, epOut, ifNum, tag;
+    bool pendingRead, supportsLocal;
+    volatile bool cancelled;
+    readonly object closeLock = new object();
     readonly byte[] rbuf = new byte[1 << 20];
     public string DevicePath;
     public static bool Debug = Environment.GetEnvironmentVariable("SDS_DEBUG") == "1";
@@ -101,6 +105,11 @@ class Usb : ILink
                 if ((pi.PipeId & 0x80) != 0) u.epIn = pi.PipeId; else u.epOut = pi.PipeId;
             }
             if (u.epIn == 0 || u.epOut == 0) { u.Dispose(); continue; }
+            Setup capsRequest = new Setup();
+            capsRequest.RequestType = 0xA1; capsRequest.Request = 7; capsRequest.Index = u.ifNum; capsRequest.Length = 24;
+            byte[] caps = new byte[24]; uint capCount;
+            u.supportsLocal = WinUsb_ControlTransfer(ih, capsRequest, caps, 24, out capCount, IntPtr.Zero)
+                && capCount >= 15 && caps[0] == 1 && (caps[14] & 2) != 0;
             u.SetTimeout(timeoutMs);
             return u;
         }
@@ -131,6 +140,7 @@ class Usb : ILink
 
     public void Write(byte[] data)
     {
+        if (cancelled) throw new IOException("olcum durduruldu");
         byte[] b = new byte[(12 + data.Length + 3) & ~3];
         byte t = NextTag();
         b[0] = 1; b[1] = t; b[2] = (byte)~t;
@@ -145,9 +155,11 @@ class Usb : ILink
 
     public byte[] Read()
     {
+        pendingRead = true;
         MemoryStream ms = new MemoryStream();
         for (; ; )
         {
+            if (cancelled) throw new IOException("olcum durduruldu");
             byte[] rq = new byte[12];
             byte t = NextTag();
             rq[0] = 2; rq[1] = t; rq[2] = (byte)~t;
@@ -187,6 +199,7 @@ class Usb : ILink
             }
             if (eom) break;
         }
+        pendingRead = false;
         return ms.ToArray();
     }
 
@@ -197,20 +210,21 @@ class Usb : ILink
     // USBTMC INITIATE_CLEAR: yarim kalmis bir aktarimdan sonra cihazin giris/cikis tamponlarini bosaltir.
     public void Clear()
     {
+        Stopwatch deadline = Stopwatch.StartNew();
         byte[] b = new byte[2];
         uint n;
         // Yarim kalmis bir calistirmadan giris ucunda bekleyen veri varsa oku ve at
         // (bu cihazda INITIATE_CLEAR tek basina bunu temizlemiyor)
-        uint drainTo = 100;
+        uint drainTo = 20;
         WinUsb_SetPipePolicy(h, epIn, 3, 4, ref drainTo);
-        for (int i = 0; i < 64 && WinUsb_ReadPipe(h, epIn, rbuf, (uint)rbuf.Length, out n, IntPtr.Zero); i++) { }
+        for (int i = 0; i < 64 && deadline.ElapsedMilliseconds < 1500 && WinUsb_ReadPipe(h, epIn, rbuf, (uint)rbuf.Length, out n, IntPtr.Zero); i++) { }
         Setup s = new Setup();
         s.RequestType = 0xA1; s.Request = 5; s.Index = ifNum; s.Length = 1;
         WinUsb_ControlTransfer(h, s, b, 1, out n, IntPtr.Zero);
         s.Request = 6; s.Length = 2;
         uint shortTo = 100;
         WinUsb_SetPipePolicy(h, epIn, 3, 4, ref shortTo);
-        for (int i = 0; i < 50; i++)
+        for (int i = 0; i < 50 && deadline.ElapsedMilliseconds < 1500; i++)
         {
             if (!WinUsb_ControlTransfer(h, s, b, 2, out n, IntPtr.Zero) || b[0] != 2) break; // 2 = PENDING
             if ((b[1] & 1) != 0) WinUsb_ReadPipe(h, epIn, rbuf, (uint)rbuf.Length, out n, IntPtr.Zero);
@@ -218,12 +232,41 @@ class Usb : ILink
         }
         WinUsb_ResetPipe(h, epOut);
         WinUsb_ResetPipe(h, epIn);
+        pendingRead = false;
+    }
+
+    public void Cancel()
+    {
+        cancelled = true;
+        lock (closeLock)
+            if (h != IntPtr.Zero)
+            {
+                WinUsb_AbortPipe(h, epIn);
+                WinUsb_AbortPipe(h, epOut);
+            }
     }
 
     public void Dispose()
     {
-        if (h != IntPtr.Zero) { WinUsb_Free(h); h = IntPtr.Zero; }
-        if (file != null) file.Close();
+        lock (closeLock)
+        {
+            if (h != IntPtr.Zero)
+            {
+                if (pendingRead) Clear();
+                if (supportsLocal)
+                {
+                    Setup local = new Setup();
+                    local.RequestType = 0xA1; local.Index = ifNum; local.Length = 1;
+                    byte[] reply = new byte[1]; uint count;
+                    local.Request = 161; // USB488 GO_TO_LOCAL.
+                    WinUsb_ControlTransfer(h, local, reply, 1, out count, IntPtr.Zero);
+                    local.Request = 160; // Deassert remote enable.
+                    WinUsb_ControlTransfer(h, local, reply, 1, out count, IntPtr.Zero);
+                }
+                WinUsb_Free(h); h = IntPtr.Zero;
+            }
+            if (file != null) file.Close();
+        }
     }
 }
 
