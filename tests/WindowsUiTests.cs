@@ -174,9 +174,9 @@ class WindowsUiTests
                     chart.DrawToBitmap(render, new Rectangle(Point.Empty, render.Size));
                 ChartArea area = chart.ChartAreas[0];
                 List<SeriesData> hoverData = (List<SeriesData>)Field(f, "series");
-                double hoverTime = hoverData[0].T[0];
-                Point mouse = new Point((int)area.AxisX.ValueToPixelPosition(hoverTime),
-                    (int)area.AxisY.ValueToPixelPosition((area.AxisY.Minimum + area.AxisY.Maximum) / 2));
+                double hoverTime = hoverData[0].T[hoverData[0].T.Count - 1];
+                Point mouse = new Point((int)Math.Ceiling(area.AxisX.ValueToPixelPosition(hoverTime)),
+                    (int)area.AxisY.ValueToPixelPosition(chart.Series[0].Points[0].YValues[0]));
                 typeof(MainForm).GetField("hoverPt", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(f, mouse);
                 typeof(MainForm).GetField("hovering", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(f, true);
                 Call(f, "UpdateHover");
