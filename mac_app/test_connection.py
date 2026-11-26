@@ -3,6 +3,7 @@ import tempfile
 import time
 import unittest
 import math
+import gc
 from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
@@ -163,6 +164,27 @@ class ConnectionTests(unittest.TestCase):
                 time.sleep(0.005)
             self.assertTrue(self.window.running)
             self.assertGreater(self.window.sample_count, 10)
+
+    def test_measurement_layout_survives_garbage_collection_with_serial_panel(self):
+        self.window._set_serial_side_panel(True)
+        with patch.object(scope, "open_instrument", side_effect=lambda _: Instrument()):
+            self.window.toggle_instrument()
+            self.wait_for(lambda: self.window.connection_worker is None)
+            gc.collect()
+            self.app.processEvents()
+            self.window.start_measure()
+            self.wait_for(lambda: self.window.sample_count >= 3)
+            for _ in range(4):
+                gc.collect()
+                self.app.processEvents()
+                root = self.window.centralWidget().layout()
+                self.assertEqual(root.count(), 3)
+                self.assertIs(root.itemAt(2).widget(), self.window.root_split)
+                self.assertTrue(self.window.root_split.isVisible())
+                self.assertTrue(self.window.stats_table.isVisible())
+                self.assertTrue(self.window.plot.isVisible())
+                self.assertTrue(self.window.serial_side.isVisible())
+                self.assertGreater(self.window.root_split.height(), 200)
 
     def test_clear_graph_while_recording_keeps_recording_and_series_identity(self):
         self.window.clear_plot()

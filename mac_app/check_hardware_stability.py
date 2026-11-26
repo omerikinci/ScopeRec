@@ -1,5 +1,6 @@
 """Manual endurance check against an attached USB scope, including real Qt mouse events."""
 import faulthandler
+import gc
 import math
 import sys
 import time
@@ -21,7 +22,14 @@ def main():
     window.record_check.setChecked(False)
     window.conn_usb.setChecked(True)
     window.usb_selector.setCurrentText("f4ec:ee38")
+    window._set_serial_side_panel(True)
     window.show()
+    window.toggle_instrument()
+    deadline = time.monotonic() + 15
+    while window.connection_worker and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
+    assert window.idle_client is not None, window.connection_state.text()
     window.start_measure()
     duration = float(sys.argv[1]) if len(sys.argv) > 1 else 90
     start = time.monotonic()
@@ -41,9 +49,14 @@ def main():
             app.sendEvent(window.plot.viewport(), event)
             moves += 1
             if moves % 250 == 0:
+                gc.collect()
+                app.processEvents()
+                assert window.root_split.isVisible() and window.plot.isVisible()
+                assert window.centralWidget().layout().count() == 3
                 print(f"elapsed={time.monotonic()-start:.1f}s samples={window.sample_count} moves={moves}", flush=True)
             time.sleep(0.01)
         assert window.sample_count >= duration, (window.sample_count, window.log.toPlainText())
+        window.grab().save("/tmp/scoperec-hardware-stability.png")
         print(f"PASS {duration}s samples={window.sample_count} mouse_moves={moves}", flush=True)
     finally:
         window.end_test()

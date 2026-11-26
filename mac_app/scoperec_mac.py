@@ -864,8 +864,8 @@ class GripHandle(QtWidgets.QSplitterHandle):
 
 
 class GripSplitter(QtWidgets.QSplitter):
-    def __init__(self, orientation=QtCore.Qt.Horizontal):
-        super().__init__(orientation)
+    def __init__(self, orientation=QtCore.Qt.Horizontal, parent=None):
+        super().__init__(orientation, parent)
         self.setHandleWidth(14)
         self.setChildrenCollapsible(False)
 
@@ -1055,7 +1055,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.connection_state.setWordWrap(True)
         options.addWidget(self.connection_state, 1)
 
-        split = GripSplitter()
+        # Retain Python subclasses as well as their C++ parent relationship. Qt/PySide
+        # can otherwise collect a wrapper cycle and remove the entire central panel.
+        split = self.root_split = GripSplitter(parent=central)
         root.addWidget(split, 1)
         left = QtWidgets.QWidget()
         left.setMinimumWidth(260)
@@ -1135,7 +1137,7 @@ class MainWindow(QtWidgets.QMainWindow):
             btn.setMinimumHeight(34)
             buttons.addWidget(btn, i // 2, i % 2)
 
-        work_split = GripSplitter()
+        work_split = GripSplitter(parent=split)
         self.work_split = work_split
         split.addWidget(work_split)
         right_tabs = QtWidgets.QTabWidget()
@@ -1146,7 +1148,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         live = QtWidgets.QWidget()
         live_lay = QtWidgets.QVBoxLayout(live)
-        live_split = GripSplitter(QtCore.Qt.Vertical)
+        live_split = self.live_split = GripSplitter(QtCore.Qt.Vertical, live)
         live_lay.addWidget(live_split, 1)
         self.stats_table = QtWidgets.QTableWidget(0, 5)
         self.stats_table.setHorizontalHeaderLabels(["Seri", "Son", "Min", "Maks", "Ortalama"])
