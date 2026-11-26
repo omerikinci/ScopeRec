@@ -891,7 +891,8 @@ class PlotHover(QtCore.QObject):
                 self.label.hide()
             else:
                 self.update_at(event.position().toPoint())
-        elif event.type() in (QtCore.QEvent.Leave, QtCore.QEvent.Hide, QtCore.QEvent.MouseButtonPress):
+        elif event.type() in (QtCore.QEvent.Leave, QtCore.QEvent.Hide, QtCore.QEvent.MouseButtonPress,
+                              QtCore.QEvent.Wheel, QtCore.QEvent.Resize):
             self.label.hide()
         return False
 
@@ -927,7 +928,9 @@ class PlotHover(QtCore.QObject):
             return
         _, key, t, value, curve = nearest
         color = curve.opts['pen'].color().name()
-        self.label.setStyleSheet(f"background:#202c3b; color:#f1f5f9; border:1px solid {color}; padding:6px; border-radius:4px;")
+        style = f"background:#202c3b; color:#f1f5f9; border:1px solid {color}; padding:6px; border-radius:4px;"
+        if self.label.styleSheet() != style:
+            self.label.setStyleSheet(style)
         self.label.setText(f"{key}\nZaman: {t:.3f} s\nDeğer: {fmt_value(value, self.unit_for_key(key))}")
         self.label.adjustSize()
         width, height = self.label.width(), self.label.height()
