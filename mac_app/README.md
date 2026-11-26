@@ -46,3 +46,13 @@ Gerçek USB cihazıyla kanal/ölçüm/renk eşleşmesini kontrol etmek için, uy
 Grafik/fare dayanıklılık testi: `.venv-macapp/bin/python mac_app/check_hardware_stability.py 90`.
 Bu kontrol sağ seri panel açıkken önce cihaz bağlantısını açar, sonra ölçümü başlatır. Ölçüm sırasında gerçek Qt fare olaylarını ve zorunlu Python bellek temizliğini tekrarlar; ana panelin görünür kaldığını denetler. Ayarlara ve kayıt dosyalarına dokunmaz.
 Qt sürümü `requirements.txt` içinde sabitlenmiştir. PySide6 6.10.3 ile grafik fare etkileşiminde yerel çökme yeniden üretildiği için paket 6.8.3 kullanır.
+
+Arayüz nesnelerinin ölçüm iş parçacığında otomatik bellek temizliğiyle yok edilmesini önlemek için pyqtgraph'ın `GarbageCollector` yardımcısı kullanılır. Döngüsel nesneler yalnızca GUI olay döngüsündeki zamanlayıcıyla temizlenir; normal referans sayımı ve düzenli bellek temizliği devam eder.
+
+Paketlenmiş uygulamada gerçek cihazla uzun test (ayarları değiştirmez; çıktı klasörüne CSV ve sonuç raporu yazar):
+
+```bash
+dist/ScopeRec.app/Contents/MacOS/ScopeRec --hardware-stability-test 600 /tmp/scoperec-endurance
+```
+
+Bu test gerçek `QApplication.exec()` döngüsünde kayıt, fare hareketleri, yakınlaştırma/kaydırma, sağ panel boyutlandırma, duraklat/devam ve USB'nin tekrar açılmasını doğrular. Arka planda bellek tahsisi baskısı oluşturur ve arayüz nesnelerinin yalnızca ana iş parçacığında yok edildiğini kontrol eder. Çökmeler ve Python hataları `~/Library/Logs/ScopeRec/runtime.log` dosyasına kaydedilir.

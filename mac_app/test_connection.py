@@ -4,6 +4,10 @@ import time
 import unittest
 import math
 import gc
+import threading
+import subprocess
+import sys
+import textwrap
 from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
@@ -185,6 +189,76 @@ class ConnectionTests(unittest.TestCase):
                 self.assertTrue(self.window.plot.isVisible())
                 self.assertTrue(self.window.serial_side.isVisible())
                 self.assertGreater(self.window.root_split.height(), 200)
+
+    def test_worker_allocations_cannot_collect_gui_objects(self):
+        disposed = []
+        gui_thread = threading.get_ident()
+
+        class GuiObject(scope.QtCore.QObject):
+            def __del__(self):
+                disposed.append(threading.get_ident())
+
+        gc.collect()
+        obj = GuiObject()
+        obj.cycle = [obj]
+        del obj
+
+        def allocate_cycles():
+            for _ in range(3000):
+                item = []
+                item.append(item)
+
+        worker = threading.Thread(target=allocate_cycles)
+        worker.start()
+        worker.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertFalse(gc.isenabled())
+        self.assertEqual(disposed, [], "A worker thread destroyed a GUI object")
+        collector = scope.ensure_gui_garbage_collection()
+        self.assertIs(collector.timer.parent(), self.app)
+        collector.check()
+        self.assertEqual(disposed, [gui_thread])
+
+    def test_active_qt_timers_survive_worker_gc_pressure_in_real_event_loop(self):
+        # Run in a subprocess: regressing this ownership rule can crash Qt itself.
+        script = textwrap.dedent("""
+            import gc, threading
+            import scoperec_mac as scope
+            app = scope.QtWidgets.QApplication([])
+            collector = scope.ensure_gui_garbage_collection()
+            collector.timer.setInterval(10)
+            assert not gc.isenabled()
+            gc.collect()
+            gui_thread = threading.get_ident()
+            disposed = []
+            class GuiObject(scope.QtCore.QObject):
+                def __init__(self):
+                    super().__init__()
+                    self.timer = scope.QtCore.QTimer(self)
+                    self.timer.start(1)
+                    self.cycle = self
+                def __del__(self):
+                    disposed.append(threading.get_ident())
+            for _ in range(50):
+                GuiObject()
+            def allocate():
+                for _ in range(10000):
+                    item = []
+                    item.append(item)
+            worker = threading.Thread(target=allocate)
+            scope.QtCore.QTimer.singleShot(0, worker.start)
+            scope.QtCore.QTimer.singleShot(1000, app.quit)
+            app.exec()
+            worker.join()
+            assert len(disposed) == 50, len(disposed)
+            assert set(disposed) == {gui_thread}, disposed
+            print('PASS active timers collected only on GUI thread')
+        """)
+        result = subprocess.run([sys.executable, "-c", script], cwd=Path(scope.__file__).parent,
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("Timers cannot be stopped", result.stderr)
+        self.assertIn("PASS active timers", result.stdout)
 
     def test_clear_graph_while_recording_keeps_recording_and_series_identity(self):
         self.window.clear_plot()

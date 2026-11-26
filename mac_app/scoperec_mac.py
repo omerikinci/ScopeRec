@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import csv
 import bisect
+import faulthandler
 import json
 import math
 import os
@@ -10,6 +11,7 @@ import socket
 import sys
 import threading
 import time
+import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +19,7 @@ from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
 import pyqtgraph as pg
 import pyqtgraph.exporters
+from pyqtgraph.util.garbage_collector import GarbageCollector
 
 try:
     import serial
@@ -86,6 +89,50 @@ PARAMS = [
 PARAM_UNITS = {p[0]: p[2] for p in PARAMS}
 CHANNELS = ["C1", "C2", "C3", "C4"]
 COLORS = ["#2d7ff9", "#f59e0b", "#16a34a", "#dc2626", "#7c3aed", "#0891b2", "#be123c", "#4b5563"]
+
+_runtime_log = None
+_runtime_errors = []
+
+
+def enable_crash_logging():
+    """Windowed macOS bundles have no stderr; retain native and Python error traces."""
+    global _runtime_log
+    directory = Path.home() / "Library" / "Logs" / "ScopeRec" if sys.platform == "darwin" else Path.home() / ".scoperec_logs"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "runtime.log"
+    if path.exists() and path.stat().st_size > 8 * 1024 * 1024:
+        path.replace(directory / "runtime.previous.log")
+    _runtime_log = open(path, "a", buffering=1, encoding="utf-8")
+    _runtime_log.write(f"\n{datetime.now().isoformat()} START pid={os.getpid()} Python={sys.version.split()[0]} Qt={QtCore.qVersion()} frozen={bool(getattr(sys, 'frozen', False))}\n")
+    if sys.stderr is None:
+        os.dup2(_runtime_log.fileno(), 2)
+        sys.stderr = _runtime_log
+    if sys.stdout is None:
+        sys.stdout = _runtime_log
+    faulthandler.enable(file=_runtime_log, all_threads=True)
+
+    def exception_hook(kind, value, trace):
+        _runtime_errors.append(f"{kind.__name__}: {value}")
+        traceback.print_exception(kind, value, trace, file=_runtime_log)
+        _runtime_log.flush()
+        if sys.stderr is not _runtime_log:
+            traceback.print_exception(kind, value, trace)
+
+    sys.excepthook = exception_hook
+
+
+def ensure_gui_garbage_collection():
+    """Qt wrappers must never be destroyed by Python GC on a measurement thread.
+
+    Use pyqtgraph's supported GUI-event-loop collector instead of CPython's
+    allocation-triggered collector, which can run inside any Python thread.
+    """
+    app = QtWidgets.QApplication.instance()
+    if not hasattr(app, "_scoperec_garbage_collector"):
+        collector = GarbageCollector(interval=1.0)
+        collector.timer.setParent(app)
+        app._scoperec_garbage_collector = collector
+    return app._scoperec_garbage_collector
 
 
 def now_stamp():
@@ -949,6 +996,7 @@ class PlotHover(QtCore.QObject):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
+        ensure_gui_garbage_collection()
         self.setWindowTitle(APP_NAME)
         self.resize(1440, 900)
         self.settings_path = Path.home() / ".scoperec_mac.json"
@@ -2021,6 +2069,14 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.ui_timer.stop()
         self.interaction_timer.stop()
+        self.plot_hover.label.hide()
+        self.viewer_hover.label.hide()
+        # Remove closed plots from pyqtgraph's global exit callbacks while Qt is
+        # still alive; leave no callbacks referring to disposed graphics widgets.
+        for plot in (self.plot, self.viewer_plot):
+            view = plot.getViewBox()
+            if view in pg.ViewBox.AllViews:
+                view.unregister()
         event.accept()
 
 
@@ -2061,6 +2117,7 @@ def main():
         print("SELFTEST OK" if ok else "SELFTEST FAILED", idn, vals, parsed, "usb_backend=", backend_ok)
         sys.exit(0 if ok else 2)
 
+    enable_crash_logging()
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     asset_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
@@ -2068,6 +2125,12 @@ def main():
     pg.setConfigOptions(antialias=True)
     win = MainWindow()
     win.show()
+    if "--hardware-stability-test" in sys.argv:
+        from hardware_endurance import install_endurance_test
+        position = sys.argv.index("--hardware-stability-test")
+        duration = float(sys.argv[position + 1])
+        output = Path(sys.argv[position + 2])
+        install_endurance_test(sys.modules[__name__], app, win, duration, output)
     sys.exit(app.exec())
 
 
