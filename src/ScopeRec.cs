@@ -1779,7 +1779,12 @@ partial class MainForm : Form
         if (!hovering) { lblHover.Visible = false; return; }
         ChartArea a = chart.ChartAreas[0];
         double x;
-        try { x = a.AxisX.PixelPositionToValue(hoverPt.X); }
+        try
+        {
+            x = a.AxisX.PixelPositionToValue(hoverPt.X);
+            double y = a.AxisY.PixelPositionToValue(hoverPt.Y);
+            if (y < a.AxisY.Minimum || y > a.AxisY.Maximum) { lblHover.Visible = false; return; }
+        }
         catch (Exception) { lblHover.Visible = false; return; } // grafik henuz cizilmedi
         if (double.IsNaN(a.AxisX.Minimum) || x < a.AxisX.Minimum || x > a.AxisX.Maximum) { lblHover.Visible = false; return; }
         double t = x * chartDiv;
@@ -1794,9 +1799,9 @@ partial class MainForm : Form
                 if (i < 0) i = Math.Min(~i, s.T.Count - 1);
                 if (i > 0 && Math.Abs(s.T[i - 1] - t) < Math.Abs(s.T[i] - t)) i--;
                 // fare verinin olmadigi bos bolgedeyse (ornegin henuz dolmamis sag taraf) bir sey gosterme
-                if (Math.Abs(s.T[i] - t) > Math.Max(1.0, WindowSeconds() / 100)) continue;
+                if (double.IsNaN(s.V[i]) || double.IsInfinity(s.V[i]) || Math.Abs(s.T[i] - t) > Math.Max(1.0, WindowSeconds() / 100)) continue;
                 if (sb.Length == 0) sb.Append(s.T[i] < 60 ? s.T[i].ToString("0.0", Cur) + " s" : Span(s.T[i]));
-                sb.Append("\n" + s.Ch + "  " + Eng(s.V[i], s.P.Unit));
+                sb.Append("\n" + s.Key + "  " + Eng(s.V[i], s.P.Unit));
             }
         }
         lock (lk)

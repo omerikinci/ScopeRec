@@ -170,6 +170,19 @@ class WindowsUiTests
                 Check(chart.Series.Count > 0, "Chart has no measurement series");
                 Check(chart.Series[0].LegendText == "C1_RMS [V]", "Legend measurement name mismatch");
                 Check(chart.Series[0].Color == Ui.Th.Chan[0], "Legend and channel color mismatch");
+                using (Bitmap render = new Bitmap(chart.Width, chart.Height))
+                    chart.DrawToBitmap(render, new Rectangle(Point.Empty, render.Size));
+                ChartArea area = chart.ChartAreas[0];
+                List<SeriesData> hoverData = (List<SeriesData>)Field(f, "series");
+                double hoverTime = hoverData[0].T[0];
+                Point mouse = new Point((int)area.AxisX.ValueToPixelPosition(hoverTime),
+                    (int)area.AxisY.ValueToPixelPosition((area.AxisY.Minimum + area.AxisY.Maximum) / 2));
+                typeof(MainForm).GetField("hoverPt", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(f, mouse);
+                typeof(MainForm).GetField("hovering", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(f, true);
+                Call(f, "UpdateHover");
+                Label tip = (Label)Field(f, "lblHover");
+                Check(tip.Visible && tip.Text.Contains("C1_RMS"), "Hover is missing the measurement name");
+                Check(chart.ClientRectangle.Contains(tip.Bounds), "Hover extends outside chart");
                 long before = (long)Field(f, "samples");
                 List<SeriesData> data = (List<SeriesData>)Field(f, "series");
                 long count = data[0].N;

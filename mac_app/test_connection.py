@@ -98,6 +98,53 @@ class ConnectionTests(unittest.TestCase):
         self.window._prepare_series()
         self.assertEqual(self.window.plot_legend.count(), len(self.window.curves))
 
+    def test_hover_shows_original_sample_name_time_and_unit(self):
+        self.window._prepare_series()
+        series = self.window.series["C1_RMS"]
+        for t, v in [(1.0, 0.002), (2.0, 0.004), (3.0, 0.006)]:
+            series.add(t, v)
+        self.window.follow_check.setChecked(False)
+        self.window._redraw_plot()
+        plot = self.window.plot
+        plot.setXRange(0, 4, padding=0)
+        plot.setYRange(0, 0.01, padding=0)
+        self.app.processEvents()
+        point = plot.mapFromScene(plot.getViewBox().mapViewToScene(scope.QtCore.QPointF(2.0, 0.004)))
+        hover = self.window.plot_hover
+        hover.update_at(point)
+        self.assertTrue(hover.label.isVisible())
+        self.assertIn("C1_RMS", hover.label.text())
+        self.assertIn("2.000 s", hover.label.text())
+        self.assertIn("4 mV", hover.label.text())
+        self.assertGreater(hover.label.x(), point.x())
+        self.assertLess(hover.label.geometry().bottom(), point.y())
+        self.assertTrue(plot.viewport().rect().contains(hover.label.geometry()))
+        self.window.curves["C1_RMS"].hide()
+        hover.update_at(point)
+        self.assertFalse(hover.label.isVisible())
+        self.window.curves["C1_RMS"].show()
+        hover.update_at(scope.QtCore.QPoint(1, 1))
+        self.assertFalse(hover.label.isVisible())
+        hover.update_at(point)
+        self.window.clear_plot()
+        self.assertFalse(hover.label.isVisible())
+
+    def test_hover_in_recording_viewer_uses_csv_unit(self):
+        csv = Path(self.directory.name) / "hover.csv"
+        csv.write_text("date,time,C1_RMS[V]\nnow,1,0.002\nnow,2,0.004\nnow,3,0.006\n")
+        with patch.object(scope.QtWidgets.QMessageBox, "warning") as warning:
+            self.window.load_recording(str(csv))
+            self.assertFalse(warning.called, warning.call_args)
+        self.window.right_tabs.setCurrentIndex(2)
+        self.app.processEvents()
+        plot = self.window.viewer_plot
+        plot.setXRange(0, 4, padding=0)
+        plot.setYRange(0, 0.01, padding=0)
+        self.app.processEvents()
+        point = plot.mapFromScene(plot.getViewBox().mapViewToScene(scope.QtCore.QPointF(2.0, 0.004)))
+        self.window.viewer_hover.update_at(point)
+        self.assertIn("4 mV", self.window.viewer_hover.label.text())
+
     def test_clear_graph_while_recording_keeps_recording_and_series_identity(self):
         self.window.clear_plot()
         self.window.dir_label.setText(self.directory.name)

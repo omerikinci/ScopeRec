@@ -138,6 +138,8 @@ static class HoverTip
         int x = mouse.X + 14, y = mouse.Y - sz.Height - 10;
         if (x + sz.Width > l.Parent.Width - 2) x = mouse.X - sz.Width - 14;
         if (y < 2) y = mouse.Y + 18;
+        x = Math.Max(2, Math.Min(x, l.Parent.ClientSize.Width - sz.Width - 2));
+        y = Math.Max(2, Math.Min(y, l.Parent.ClientSize.Height - sz.Height - 2));
         l.Location = new Point(x, y);
         l.Visible = true;
     }

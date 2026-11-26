@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import csv
+import bisect
 import json
 import math
 import os
@@ -872,6 +873,76 @@ class GripSplitter(QtWidgets.QSplitter):
         return GripHandle(self.orientation(), self)
 
 
+class PlotHover(QtCore.QObject):
+    """Inspect original samples without changing the plot or capturing mouse input."""
+    def __init__(self, plot, curves, unit_for_key):
+        super().__init__(plot)
+        self.plot, self.curves, self.unit_for_key = plot, curves, unit_for_key
+        self.label = QtWidgets.QLabel(plot.viewport())
+        self.label.setTextFormat(QtCore.Qt.PlainText)
+        self.label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        self.label.hide()
+        plot.viewport().setMouseTracking(True)
+        plot.viewport().installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if event.type() == QtCore.QEvent.MouseMove:
+            if event.buttons():
+                self.label.hide()
+            else:
+                self.update_at(event.position().toPoint())
+        elif event.type() in (QtCore.QEvent.Leave, QtCore.QEvent.Hide, QtCore.QEvent.MouseButtonPress):
+            self.label.hide()
+        return False
+
+    def update_at(self, mouse):
+        view = self.plot.getViewBox()
+        scene = self.plot.mapToScene(mouse)
+        if not view.sceneBoundingRect().contains(scene):
+            self.label.hide()
+            return
+        target = view.mapSceneToView(scene)
+        span = view.viewRange()[0][1] - view.viewRange()[0][0]
+        nearest = None
+        for key, curve in self.curves.items():
+            if not curve.isVisible():
+                continue
+            times, values = curve.getOriginalDataset()
+            if times is None or len(times) == 0:
+                continue
+            index = bisect.bisect_left(times, target.x())
+            candidates = [i for i in (index - 1, index) if 0 <= i < len(times)]
+            index = min(candidates, key=lambda i: abs(times[i] - target.x()))
+            t, value = float(times[index]), float(values[index])
+            if not math.isfinite(value) or abs(t - target.x()) > max(1.0, span / 100):
+                continue
+            point = view.mapViewToScene(QtCore.QPointF(t, value))
+            if not view.sceneBoundingRect().contains(point):
+                continue
+            distance = abs(point.y() - scene.y())
+            if nearest is None or distance < nearest[0]:
+                nearest = (distance, key, t, value, curve)
+        if nearest is None:
+            self.label.hide()
+            return
+        _, key, t, value, curve = nearest
+        color = curve.opts['pen'].color().name()
+        self.label.setStyleSheet(f"background:#202c3b; color:#f1f5f9; border:1px solid {color}; padding:6px; border-radius:4px;")
+        self.label.setText(f"{key}\nZaman: {t:.3f} s\nDeğer: {fmt_value(value, self.unit_for_key(key))}")
+        self.label.adjustSize()
+        width, height = self.label.width(), self.label.height()
+        bounds = self.plot.viewport().rect()
+        x, y = mouse.x() + 14, mouse.y() - height - 10
+        if x + width > bounds.width() - 2:
+            x = mouse.x() - width - 14
+        if y < 2:
+            y = mouse.y() + 18
+        self.label.move(max(2, min(x, bounds.width() - width - 2)),
+                        max(2, min(y, bounds.height() - height - 2)))
+        self.label.show()
+        self.label.raise_()
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1146,6 +1217,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plot.getPlotItem().setMenuEnabled(False)
         self.plot.getViewBox().setMouseMode(pg.ViewBox.PanMode)
         self.plot.getViewBox().sigRangeChangedManually.connect(self._manual_plot_range)
+        self.plot_hover = PlotHover(self.plot, self.curves, lambda key: self.series[key].unit if key in self.series else "")
         plot_lay.addWidget(self.plot, 1)
         live_split.addWidget(plot_panel)
         self.log = QtWidgets.QTextEdit()
@@ -1209,6 +1281,9 @@ class MainWindow(QtWidgets.QMainWindow):
         viewer_lay.addWidget(self.viewer_legend)
         self.viewer_plot = pg.PlotWidget()
         self.viewer_plot.showGrid(x=True, y=True, alpha=0.25)
+        self.viewer_hover = PlotHover(self.viewer_plot, self.viewer_curves,
+                                     lambda key: key.rsplit("[", 1)[1].rstrip("]") if "[" in key
+                                     else PARAM_UNITS.get(key.rsplit("_", 1)[-1], ""))
         viewer_lay.addWidget(self.viewer_plot, 1)
         self.viewer_events = QtWidgets.QTextEdit()
         self.viewer_events.setReadOnly(True)
@@ -1694,6 +1769,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.dirty_plot = False
 
     def clear_plot(self):
+        self.plot_hover.label.hide()
         for series in self.series.values():
             series.times.clear()
             series.values.clear()
@@ -1845,6 +1921,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.load_recording(path)
 
     def load_recording(self, path):
+        self.viewer_hover.label.hide()
         self.viewer_plot.clear()
         self.viewer_curves.clear()
         self.viewer_legend.clear()
@@ -1870,7 +1947,10 @@ class MainWindow(QtWidgets.QMainWindow):
                     ys[h].append(safe_float(row[i]) if i < len(row) else math.nan)
             for i, (key, vals) in enumerate(ys.items()):
                 color = COLORS[i % len(COLORS)]
-                self.viewer_curves[key] = self.viewer_plot.plot(xs, vals, pen=pg.mkPen(color, width=1), antialias=False, autoDownsample=True, clipToView=True, name=key)
+                curve = self.viewer_plot.plot(xs, vals, pen=pg.mkPen(color, width=1), antialias=False, name=key)
+                curve.setDownsampling(auto=True, method="peak")
+                curve.setClipToView(True)
+                self.viewer_curves[key] = curve
                 self._add_legend_item(self.viewer_legend, key, key, color)
             base = str(Path(path).with_suffix(""))
             log_path = base + "_log.txt"
