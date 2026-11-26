@@ -42,3 +42,7 @@ USB bağlantısı macOS'ta libusb/PyUSB üzerinden denenir. Cihaz USB Test & Mea
 Duraklatma, testi bitirme ve uygulamadan çıkış sırasında ölçüm iş parçacığının bitmesi beklenir. Yarım kalmış USB aktarımı temizlenir; destekleyen USB488 cihazlarında yerel kontrol geri verilip USB arayüzü bırakılır. Güç düğmesiyle kapatmadan önce ölçümü durdurun veya bağlantıyı kesin.
 
 Gerçek USB cihazıyla kanal/ölçüm/renk eşleşmesini kontrol etmek için, uygulama bağlantısı kapalıyken `.venv-macapp/bin/python mac_app/check_hardware_colors.py f4ec:ee38` çalıştırılabilir. Bu kontrol C1/C2 üzerindeki RMS, MEAN ve PKPK cevaplarını grafik, lejant ve tabloyla karşılaştırır; ölçüm sürerken grafik temizlemeyi de dener. Kayıt dosyası oluşturmaz ve cihazın kanal ayarlarını değiştirmez.
+
+Grafik/fare dayanıklılık testi: `.venv-macapp/bin/python mac_app/check_hardware_stability.py 90`.
+Bu kontrol bağlı USB cihazından ölçüm alırken gerçek Qt fare olaylarını tekrarlar; ayarlara ve kayıt dosyalarına dokunmaz.
+Qt sürümü `requirements.txt` içinde sabitlenmiştir. PySide6 6.10.3 ile grafik fare etkileşiminde yerel çökme yeniden üretildiği için paket 6.8.3 kullanır.

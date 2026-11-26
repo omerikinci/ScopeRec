@@ -145,6 +145,25 @@ class ConnectionTests(unittest.TestCase):
         self.window.viewer_hover.update_at(point)
         self.assertIn("4 mV", self.window.viewer_hover.label.text())
 
+    def test_repeated_graph_mouse_events_while_measuring(self):
+        with patch.object(scope, "open_instrument", side_effect=lambda _: Instrument()):
+            self.window.start_measure()
+            self.wait_for(lambda: self.window.sample_count >= 3)
+            for index in range(800):
+                self.app.processEvents()
+                view = self.window.plot.getViewBox()
+                ranges = view.viewRange()
+                point = self.window.plot.mapFromScene(view.mapViewToScene(scope.QtCore.QPointF(
+                    max(0, self.window.current_t - 0.4),
+                    ranges[1][0] + (ranges[1][1] - ranges[1][0]) * (0.5 + 0.4 * math.sin(index / 20)))))
+                event = scope.QtGui.QMouseEvent(scope.QtCore.QEvent.MouseMove, scope.QtCore.QPointF(point),
+                    scope.QtCore.QPointF(self.window.plot.viewport().mapToGlobal(point)), scope.QtCore.Qt.NoButton,
+                    scope.QtCore.Qt.NoButton, scope.QtCore.Qt.NoModifier)
+                self.app.sendEvent(self.window.plot.viewport(), event)
+                time.sleep(0.005)
+            self.assertTrue(self.window.running)
+            self.assertGreater(self.window.sample_count, 10)
+
     def test_clear_graph_while_recording_keeps_recording_and_series_identity(self):
         self.window.clear_plot()
         self.window.dir_label.setText(self.directory.name)
