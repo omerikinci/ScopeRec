@@ -24,6 +24,8 @@ Kurulum `/Applications/ScopeRec Rust.app` oluşturur. Eski `/Applications/ScopeR
 
 Windows için GitHub Actions'taki **ScopeRec Rust Build And Test** çalışmasının `ScopeRec-Rust-Windows` paketini açın ve `scoperec-rust.exe` çalıştırın. Mevcut C# uygulamasından ayrı dosyalar kullanır. Kaynaktan derleme için `cargo build --release --bins --manifest-path rust_app/Cargo.toml --locked` yeterlidir; Windows derleyici araçları kurulu olmalıdır.
 
+Windows x64 dağıtımı C çalışma zamanını statik bağlar; ayrıca Visual C++ çalışma zamanı veya libusb DLL'si kurulması gerekmez. İş akışı üç EXE'nin gerçek içe aktarma tablosunu, x64 biçimini, GUI/konsol türünü ve simgesini denetler; sonucu paketteki `windows-package-check.json` dosyasına yazar. Bu denetimde kullanılan Python yalnızca derleme ortamındadır; uygulamanın çalışması için gerekmez.
+
 ## İlk kullanım ve grafik
 
 1. **Sanal cihaz** seçiliyken kanalları ve ölçümleri belirleyip **Başlat** düğmesine basın. Dosya da isteniyorsa başlamadan önce **CSV kaydı** seçin.

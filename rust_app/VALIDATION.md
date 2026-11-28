@@ -42,4 +42,6 @@ Tüm geçmiş görünümü 27.516 çizim noktasına indirildi; tepe değeri, ver
 
 ## Doğrulanmayan alan
 
+Windows dağıtım kontrolü ayrıca EXE içe aktarma tablolarında harici `VCRUNTIME`, `MSVCP` veya libusb DLL bağımlılığı bulunmasını reddeder. Windows CI son paketten çok kanallı sanal CLI ölçümünü de çalıştırır. İçe aktarma raporu dağıtım paketine eklenir.
+
 Sanal testler fiziksel USB/LAN cihaz uyumluluğunu, cihazın güç kapanışını veya tüm osiloskop modellerinin komut ayrıntılarını doğrulamaz. Windows paketi için GitHub Actions derleme/test sonucu ayrıca kontrol edilir; bu Mac üzerindeki ölçümler Windows performans sonucu değildir.
