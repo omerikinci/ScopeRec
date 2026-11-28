@@ -115,6 +115,24 @@ fn tcp_read_is_cancelled_without_waiting_for_long_device_delay() {
 }
 
 #[test]
+fn explicit_query_timeout_is_honored() {
+    let server = SimServer::start(
+        "127.0.0.1:0",
+        SimConfig {
+            delay_ms: 5000,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut client =
+        transport::TcpInstrument::connect(&server.address.to_string(), token()).unwrap();
+    client.set_timeout(Duration::from_millis(60));
+    let started = Instant::now();
+    assert!(client.text("*IDN?").is_err());
+    assert!(started.elapsed() < Duration::from_secs(1));
+}
+
+#[test]
 fn recording_pause_resume_limits_and_markers_share_one_file() {
     let tmp = tempfile::tempdir().unwrap();
     let server = SimServer::start("127.0.0.1:0", Default::default()).unwrap();

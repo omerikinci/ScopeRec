@@ -13,7 +13,7 @@ Rust sürümünde uygulanan özellikler:
 - Seri değer ayrıştırma ve görünürlük seçimi; canlı ölçümle ortak zaman, sağ eksen ve yeniden boyutlandırılabilir sağ panel/sekmeler.
 - CSV/log/olay/seri dosyalarını açma, sürükle-bırak, olaylara gitme, limit analizi, veri kesintileri, gerçek saat/süre ekseni ve PNG.
 - Türkçe/İngilizce, açık/koyu mat tema, ayar kalıcılığı, varsayılanları yükleme, uyku önleme, kontrollü kapanış.
-- SCPI komut satırı, sürekli ölçüm/CSV, ham dalga verisi ve TCP köprüsü.
+- SCPI komut satırı, çok kanallı sürekli ölçüm/CSV, tekrarlı sorgu, sürekli ham dalga ve kare/özet CSV, zaman aşımı, Ctrl+C ile kaynak bırakma, seri/TCP köprüsü ve köprü üzerinden akış komutları.
 - Bağımsız sanal SCPI sunucusu; uygulama içinde simülatör ve sanal seri veri kaynağı; fiziksel donanım gerektirmeyen hata/yeniden bağlanma testleri.
 
 Doğrulama sonuçları ve fiziksel cihazla denenmeyen kısımlar README'de açıkça belirtilir. Bu geliştirmede kullanıcı talebi gereği fiziksel osiloskop kullanılmaz.

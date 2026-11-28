@@ -20,6 +20,7 @@ pub fn check_cancel(cancel: &Cancel) -> Result<()> {
     Ok(())
 }
 pub trait Instrument: Send {
+    fn set_timeout(&mut self, _timeout: Duration) {}
     fn write(&mut self, command: &str) -> Result<()>;
     fn read(&mut self) -> Result<Vec<u8>>;
     fn clear(&mut self) -> Result<()>;
@@ -82,6 +83,7 @@ pub struct TcpInstrument {
     stream: TcpStream,
     buffer: VecDeque<u8>,
     cancel: Cancel,
+    timeout: Duration,
 }
 impl TcpInstrument {
     pub fn connect(address: &str, cancel: Cancel) -> Result<Self> {
@@ -108,6 +110,7 @@ impl TcpInstrument {
                         stream,
                         buffer: VecDeque::new(),
                         cancel,
+                        timeout: Duration::from_secs(10),
                     });
                 }
                 Err(e) => last = Some(e),
@@ -152,6 +155,9 @@ impl TcpInstrument {
     }
 }
 impl Instrument for TcpInstrument {
+    fn set_timeout(&mut self, timeout: Duration) {
+        self.timeout = timeout;
+    }
     fn write(&mut self, command: &str) -> Result<()> {
         check_cancel(&self.cancel)?;
         self.stream.write_all(command.trim_end().as_bytes())?;
@@ -159,7 +165,7 @@ impl Instrument for TcpInstrument {
         Ok(())
     }
     fn read(&mut self) -> Result<Vec<u8>> {
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + self.timeout;
         let mut out = Vec::new();
         loop {
             let b = self.byte(deadline)?;
@@ -285,6 +291,7 @@ pub struct UsbInstrument {
     pending: bool,
     local: bool,
     cancel: Cancel,
+    timeout: Duration,
 }
 impl UsbInstrument {
     pub fn connect(selector: &str, cancel: Cancel) -> Result<Self> {
@@ -371,6 +378,7 @@ impl UsbInstrument {
                         pending: false,
                         local,
                         cancel,
+                        timeout: Duration::from_secs(10),
                     });
                 }
             }
@@ -399,6 +407,9 @@ impl UsbInstrument {
     }
 }
 impl Instrument for UsbInstrument {
+    fn set_timeout(&mut self, timeout: Duration) {
+        self.timeout = timeout;
+    }
     fn write(&mut self, command: &str) -> Result<()> {
         check_cancel(&self.cancel)?;
         let tag = self.next();
@@ -413,7 +424,7 @@ impl Instrument for UsbInstrument {
     }
     fn read(&mut self) -> Result<Vec<u8>> {
         let mut out = vec![];
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + self.timeout;
         let mut buffer = vec![0u8; 65536];
         for _ in 0..2048 {
             check_cancel(&self.cancel)?;

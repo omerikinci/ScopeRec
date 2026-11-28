@@ -42,6 +42,7 @@ pub struct SimClient {
     queries: usize,
     pending: String,
     cancel: Cancel,
+    timeout: Duration,
 }
 impl SimClient {
     pub fn new(config: SimConfig, cancel: Cancel) -> Self {
@@ -51,6 +52,7 @@ impl SimClient {
             queries: 0,
             pending: String::new(),
             cancel,
+            timeout: Duration::from_secs(10),
         }
     }
     pub fn value(&self, ch: usize, code: &str) -> f64 {
@@ -80,8 +82,12 @@ impl SimClient {
             bail!("simulated connection loss");
         }
         let until = Instant::now() + Duration::from_millis(self.config.delay_ms);
+        let deadline = Instant::now() + self.timeout;
         while Instant::now() < until {
             check_cancel(&self.cancel)?;
+            if Instant::now() >= deadline {
+                bail!("simulated response timed out");
+            }
             thread::sleep(Duration::from_millis(5));
         }
         check_cancel(&self.cancel)?;
@@ -109,6 +115,17 @@ impl SimClient {
                     .and_then(|c| c.to_digit(10))
             })
             .unwrap_or(1) as usize;
+        if c.ends_with(":VDIV?") {
+            return Ok(
+                format!("{}\n", self.config.amplitude * (1. + ch as f64 * 0.05) / 8.).into_bytes(),
+            );
+        }
+        if c.ends_with(":OFST?") {
+            return Ok(format!("{}\n", -0.01 * ch as f64).into_bytes());
+        }
+        if c == "SARA?" {
+            return Ok(b"1000000\n".to_vec());
+        }
         if c.contains("PAVA?") {
             let code = c.split('?').nth(1).unwrap_or("ALL").trim();
             let values = PARAMS
@@ -133,7 +150,11 @@ impl SimClient {
         }
         if c.contains("WF?") || c.contains("WAV:DATA?") {
             let mut samples: Vec<u8> = (0..2048)
-                .map(|i| (127. + 100. * (i as f64 / 30.).sin()) as u8)
+                .map(|i| {
+                    (100.
+                        * (i as f64 * std::f64::consts::TAU * self.config.frequency / 1_000_000.)
+                            .sin()) as i8 as u8
+                })
                 .collect();
             samples[..4].copy_from_slice(&[0, 10, 13, 255]);
             let mut out =
@@ -164,6 +185,9 @@ impl SimClient {
     }
 }
 impl Instrument for SimClient {
+    fn set_timeout(&mut self, timeout: Duration) {
+        self.timeout = timeout;
+    }
     fn write(&mut self, command: &str) -> Result<()> {
         check_cancel(&self.cancel)?;
         self.pending = command.into();

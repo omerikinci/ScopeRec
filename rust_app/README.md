@@ -48,12 +48,17 @@ Diğer markalar: `rigol`, `keysight`, `tektronix`. `--delay-ms`, `--disconnect-a
 
 ```sh
 scoperec-rust-cli --simulate '*IDN?'
-scoperec-rust-cli --lan 127.0.0.1:17025 --meas C1:RMS,PKPK --interval 250 --count 20 --csv test.csv
-scoperec-rust-cli --simulate --wave C1 --csv waveform.bin
+scoperec-rust-cli --lan 127.0.0.1:17025 --meas C1:RMS,PKPK C2:FREQ --interval 250 --count 20 --csv test.csv
+scoperec-rust-cli --simulate --wave C1 --raw waveform.bin --count 1
+scoperec-rust-cli --simulate --wave C1 --dump wave-frames --count 10 --csv wave-summary.csv
+scoperec-rust-cli --simulate --loop '*IDN?' --count 5 --timeout 3000
 scoperec-rust-cli --usb f4ec:ee38 --tcp 5026
+scoperec-rust-cli --simulate --com COM11 --baud 115200
 ```
 
-Komut verilmezse etkileşimli SCPI terminali açılır; `:quit` ile çıkılır. TCP köprüsü güvenli varsayılan olarak yalnızca `127.0.0.1` üzerinde dinler.
+Komut verilmezse etkileşimli SCPI terminali açılır; `:quit` ile çıkılır. `!help`, `!clear`, `!meas [ms] C1:RMS,PKPK C2:FREQ`, `!loop [ms] sorgu` ve `!wave [ms] C1` komutları terminal, seri köprü ve TCP köprü üzerinde çalışır. Yeni satır/komut döngüyü durdurur; sonraki komut kaybolmaz. Ctrl+C durdurup bağlantı kaynaklarının bırakılmasını sağlar. `--count 0` sürekli kayıt, pozitif değer örnek/kare sayısıdır. Ham dalga dosyası seçilirse varsayılan tek karedir. `--dump` her kareyi kalibre edilmiş zaman/volt CSV'sine yazar; `--csv` dalga min/maks/ortalama özetini kaydeder. Ham dalga kalibrasyonu Siglent komutlarını kullanır.
+
+`--com` sanal seri port çiftinin bir ucunu SCPI köprüsüne bağlar (macOS'ta cihaz yolu, Windows'ta COM adı); osiloskop bağlantısı ayrıca `--lan` veya `--usb` ile seçilir. TCP köprüsü yalnızca `127.0.0.1` üzerinde dinler. Bağlantı türü seçilmezse fiziksel cihaza dokunmadan simülatör kullanılır.
 
 ## Mimari
 

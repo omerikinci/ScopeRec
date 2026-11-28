@@ -81,10 +81,16 @@ impl Endurance {
         }
         self.last_input = Instant::now();
         let f = self.frames as f32;
-        let pos = egui::pos2(
+        let mut pos = egui::pos2(
             rect.left() + rect.width() * (0.5 + 0.4 * (f / 37.).sin()),
             rect.top() + rect.height() * (0.5 + 0.4 * (f / 51.).sin()),
         );
+        if self
+            .start
+            .is_some_and(|s| s.elapsed() < Duration::from_secs(8))
+        {
+            pos.x = rect.left() + rect.width() * 0.05;
+        }
         raw.events.push(egui::Event::PointerMoved(pos));
         self.moves += 1;
         if self.frames.is_multiple_of(45) {
@@ -245,6 +251,17 @@ impl Endurance {
         let elapsed = self.start.map_or(0., |s| s.elapsed().as_secs_f64());
         if self.error.is_none() {
             anyhow::ensure!(self.captured, "native interface screenshot missing");
+            for series in app.series.values() {
+                anyhow::ensure!(
+                    series
+                        .points
+                        .iter()
+                        .zip(series.points.iter().skip(1))
+                        .all(|(a, b)| a[0] <= b[0]),
+                    "unsorted live history: {}",
+                    series.key
+                );
+            }
             let stem = self.stem.as_ref().unwrap();
             let mut recording = Recording::load(&recording::suffix(stem, ".csv"))?;
             let rows = recording.series["C1_RMS"].points.len();

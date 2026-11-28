@@ -4,7 +4,7 @@ Geliştirme ve test sırasında fiziksel osiloskop kullanılmadı. Testler macOS
 
 ## Otomatik kontroller
 
-- `cargo test --all-targets --locked`: 21 test geçti (12 kütüphane, 1 komut satırı, 8 entegrasyon).
+- `cargo test --all-targets --locked`: 25 test geçti (12 kütüphane, 4 komut satırı, 9 entegrasyon).
 - `cargo clippy --all-targets --locked -- -D warnings`: uyarısız.
 - `cargo fmt --check`: geçti.
 - Bağımsız TCP simülatörüyle marka komutları, 17 Siglent ölçümü, tanımsız değerler, ikili BMP/dalga verisi, gecikmede iptal, bağlantı kaybında yeniden bağlanma ve üç seri oturum sınandı.
@@ -20,9 +20,13 @@ Bu stres testinde macOS `time -l` en yüksek RSS değerini 161.087.488 bayt (153
 
 90 saniyelik sanal arayüz denemesi 1.914 ölçümle geçti. Bağımsız TCP SCPI sunucusu ve üç sanal seri oturum birlikte çalıştı; grafik/terminal temizleme, gezinme ve duraklat/devam uygulandı. Kaydedilen dosyalar yeniden açıldı ve PNG üretildi.
 
-Kayıt görüntüleyicideki son düzeltmelerden sonra `/Applications/ScopeRec Rust.app` içindeki son kurulu kopya ayrıca 75,07 saniye çalıştırıldı: 1.555 ölçüm, üç seri oturum, duraklat/devam, dosyaların yeniden açılması ve PNG üretimi **PASS** ile sonuçlandı. Uygulamanın kendi çizim yüzeyinden `interface.png` alındı ve görsel olarak incelendi. İşletim sistemi pencere denetim aracı bu uygulamanın penceresini keşfedemediği için elle fareyle pencere testi yapıldığı iddia edilmez.
+Kayıt görüntüleyicideki düzeltmelerden sonra `/Applications/ScopeRec Rust.app` içindeki o aşamadaki kurulu kopya ayrıca 75,07 saniye çalıştırıldı: 1.555 ölçüm, üç seri oturum, duraklat/devam, dosyaların yeniden açılması ve PNG üretimi **PASS** ile sonuçlandı. Uygulamanın kendi çizim yüzeyinden `interface.png` alındı ve görsel olarak incelendi. İşletim sistemi pencere denetim aracı bu uygulamanın penceresini keşfedemediği için elle fareyle pencere testi yapıldığı iddia edilmez.
+
+CLI eşleştirmesi, belirgin seri panel tutamacı, imleç kutusu ve seri zaman sürekliliği düzeltmelerini içeren **son kurulu paket** ayrıca 180,07 saniye sınandı: 3.790 ölçüm, 19.392 arayüz geçişi, 6.332 sentetik imleç hareketi, üç seri oturum ve iki duraklat/devam döngüsü **PASS** verdi. Tüm canlı serilerde zaman sırası ayrıca doğrulandı. CSV/seri yeniden yükleme, analiz ve PNG üretimi geçti. Son arayüz görüntüsünde `C1_PKPK`, `1.509 s` ve `3.526111 V` bilgi kutusu ilgili yeşil çizgiyle eşleşti; varsayılan boş bilgi balonu kaldırıldı. Son kodla 25 test ve uyarısız Clippy kontrolü yeniden tamamlandı.
 
 Ayrı komut satırı denemesinde 8 satırlık CSV ve TCP köprüsünden 2.048 baytlık dalga aktarımı doğrulandı. Dalga içindeki `0`, LF, CR ve `255` baytları korundu; sonraki kimlik sorgusu da doğru okundu.
+
+Son CLI eşleştirmesinde ayrıca çok kanallı ölçüm/parametre takma adları, üç kalibre edilmiş dalga karesi ve özet CSV, ham dalga dosyası, tekrarlı sorgu, TCP akışını yeni satırla durdurma, sonraki komutu koruma, yeni TCP istemcisi ve Ctrl+C ile çıkış sınandı. Seri SCPI köprüsü macOS sanal PTY çifti üzerinde kimlik sorgusu, akış/durdurma/sonraki sorgu ve temiz çıkışla **PASS** verdi. PTY baud ayarı `0` kullanıldı; bu sanal uçta fiziksel baud/modem hatları yoktur. Gerçek seri adaptörü doğrulaması olarak sunulmaz.
 
 ## Büyük geçmiş
 

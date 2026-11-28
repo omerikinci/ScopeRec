@@ -262,6 +262,8 @@ fn plot_view(
         .allow_boxed_zoom(true)
         .allow_double_click_reset(false)
         .show_grid(true)
+        .show_x(false)
+        .show_y(false)
         .label_formatter(|_, _| String::new())
         .y_axis_label(&state.unit)
         .x_axis_label(tr(en, "Süre [s]", "Time [s]"));
@@ -439,6 +441,7 @@ fn plot_view(
         );
         egui::Area::new(egui::Id::new((id, "cursor_info")))
             .order(egui::Order::Tooltip)
+            .fade_in(false)
             .pivot(egui::Align2::LEFT_BOTTOM)
             .fixed_pos(pos + Vec2::new(14., -12.))
             .interactable(false)
@@ -706,7 +709,7 @@ impl ScopeApp {
                             self.series.insert(key.clone(), Series::new(&key, false));
                         }
                     } else {
-                        for s in self.series.values_mut() {
+                        for s in self.series.values_mut().filter(|s| !s.serial) {
                             s.add(t, f64::NAN, self.config.retention);
                         }
                     }
@@ -1737,7 +1740,7 @@ impl eframe::App for ScopeApp {
             });
         });
         if self.config.serial_side {
-            egui::SidePanel::right("serial_side")
+            let panel = egui::SidePanel::right("serial_side")
                 .default_width(380.)
                 .min_width(320.)
                 .max_width(800.)
@@ -1745,6 +1748,18 @@ impl eframe::App for ScopeApp {
                 .show(ctx, |ui| {
                     self.serial_panel(ui);
                 });
+            let grip = egui::Rect::from_center_size(
+                egui::pos2(
+                    panel.response.rect.left() + 3.,
+                    panel.response.rect.center().y,
+                ),
+                Vec2::new(4., 90.),
+            );
+            ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("serial_resize_grip"),
+            ))
+            .rect_filled(grip, 2., Color32::from_rgb(72, 94, 115));
         }
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -1882,6 +1897,7 @@ mod tests {
             text: "limit test".into(),
             value: String::new(),
         }];
+        let mut saw_cursor_value = false;
         for frame in 0..8 {
             let mut raw = egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
@@ -1911,9 +1927,21 @@ mod tests {
                 });
             });
             assert!(!output.shapes.is_empty());
+            saw_cursor_value |= output.shapes.iter().any(|shape| {
+                if let egui::epaint::Shape::Text(text) = &shape.shape {
+                    text.galley.job.text.contains("Value:")
+                        || text.galley.job.text.contains("Değer:")
+                } else {
+                    false
+                }
+            });
             assert!(state.bounds.iter().all(|v| v.is_finite()));
         }
         assert!(state.screen.width() > 300.);
+        assert!(
+            saw_cursor_value,
+            "custom cursor must render its measurement value"
+        );
         assert!(state.bounds[1] > state.bounds[0]);
         state.shift(-0.25);
         assert!(!state.follow && state.request.is_some());
