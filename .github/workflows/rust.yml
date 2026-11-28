@@ -1,0 +1,43 @@
+name: ScopeRec Rust Build And Test
+on:
+  push:
+    paths: ['rust_app/**', '.github/workflows/rust.yml', 'logo/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install Rust stable
+        shell: bash
+        run: rustup update stable --no-self-update
+      - name: Test without physical hardware
+        shell: bash
+        run: cargo test --manifest-path rust_app/Cargo.toml --all-targets --locked
+      - name: Build native applications
+        shell: bash
+        run: cargo build --manifest-path rust_app/Cargo.toml --release --bins --locked
+      - name: Package Mac application
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          ./rust_app/build-mac.sh
+          ditto -c -k --sequesterRsrc --keepParent 'dist/ScopeRec Rust.app' ScopeRec-Rust-Mac.zip
+      - name: Package Windows applications
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force rust-windows-package | Out-Null
+          Copy-Item rust_app/target/release/scoperec-rust.exe,rust_app/target/release/scoperec-rust-cli.exe,rust_app/target/release/scoperec-simulator.exe,rust_app/README.md,rust_app/FEATURES.md,rust_app/VALIDATION.md -Destination rust-windows-package
+          Compress-Archive -Path rust-windows-package/* -DestinationPath ScopeRec-Rust-Windows.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ScopeRec-Rust-${{ runner.os }}
+          path: ScopeRec-Rust-*.zip

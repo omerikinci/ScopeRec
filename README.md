@@ -130,6 +130,16 @@ open dist/ScopeRec.app
 
 Bu sürüm LAN/SCPI üzerinden ölçüm yapar; ayrıca USB Test & Measurement sınıfındaki cihazlar için libusb/PyUSB tabanlı USB kablo bağlantısını dener. macOS'ta USB erişimi cihaza ve izinlere bağlı olduğundan en sorunsuz yol çoğu durumda LAN/SCPI bağlantısıdır.
 
+## Ayrı Rust sürümü
+
+**ScopeRec Rust** karşılaştırma için bağımsız uygulamadır; mevcut Mac ve Windows uygulamalarını değiştirmez. Kaynak kodu, sanal cihaz ve test araçları [`rust_app`](rust_app/README.md) klasöründedir. Ayarları ve varsayılan kayıt klasörü ayrıdır.
+
+```sh
+./rust_app/build-mac.sh --install
+```
+
+Bu geliştirmede fiziksel osiloskop kullanılmaz. Uygulama içindeki **Sanal cihaz**, ayrı TCP SCPI simülatörü ve `sim://serial` kaynaklarıyla ölçüm/kayıt/seri iş akışları denenir.
+
 ## Klasör düzeni
 
 | Dosya / klasör | İçerik |

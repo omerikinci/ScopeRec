@@ -11,3 +11,6 @@ __pycache__/
 *.pyc
 *.spec
 build/
+rust_app/target/
+!rust_app/src/bin/
+!rust_app/src/bin/*.rs
